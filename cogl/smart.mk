@@ -4,15 +4,6 @@
 
 $(call sm-new-module, cogl, shared, gcc)
 
-SUPPORT_XLIB := true
-SUPPORT_GLX := true
-COGL_DRIVER_GL_SUPPORTED := true
-COGL_DRIVER_GLES_SUPPORTED :=
-COGL_DRIVER := gl
-COGL_GL_LIBNAME := libGL.so.1
-COGL_GLES1_LIBNAME :=
-COGL_GLES2_LIBNAME :=
-
 cogl.driver.sources :=
 
 ifneq ($(COGL_DRIVER_GL_SUPPORTED),)

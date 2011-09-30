@@ -33,6 +33,9 @@ sm.this.libs := \
   $(shell pkg-config --libs pango) \
   $(shell pkg-config --libs pangocairo) \
 
+sm.this.export.compile.flags := \
+  $(shell pkg-config --cflags pango) \
+
 sm.this.export.libdirs := $(sm.out.lib)
 sm.this.export.libs := cogl-pango \
   $(sm.this.libs)
