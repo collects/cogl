@@ -250,4 +250,13 @@ sm.this.sources += \
   winsys/cogl-winsys-egl-private.h
 endif
 
+sm.this.includes := \
+  $(sm.this.dir) \
+  $(sm.this.dir)/.. \
+  $(sm.this.dir)/winsys \
+
+sm.this.defines := \
+  -DCLUTTER_COMPILATION \
+  -DHAVE_COGL_GL
+
 $(sm-build-this)
