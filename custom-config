@@ -1,0 +1,13 @@
+#
+#  This file was added by Duzy Chan <code@duzy.info> on 2011-09-30
+#
+SUPPORT_XLIB := true
+SUPPORT_GLX := true
+COGL_DRIVER_GL_SUPPORTED := true
+COGL_DRIVER_GLES_SUPPORTED :=
+COGL_DRIVER := gl
+COGL_GL_LIBNAME := libGL.so.1
+COGL_GLES1_LIBNAME :=
+COGL_GLES2_LIBNAME :=
+
+COGL_EXAMPLES_DATA := $(sm.top)/examples/
