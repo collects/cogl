@@ -264,8 +264,8 @@ sm.this.includes := \
   /usr/include/drm
 
 sm.this.defines := \
-  -DG_LOG_DOMAIN=\"Cogl\" \
   -DCLUTTER_COMPILATION \
+  -DG_LOG_DOMAIN=\"Cogl\" \
   -DCOGL_GL_LIBNAME=\"$(COGL_GL_LIBNAME)\" \
   -DCOGL_GLES1_LIBNAME=\"$(COGL_GLES1_LIBNAME)\" \
   -DCOGL_GLES2_LIBNAME=\"$(COGL_GLES2_LIBNAME)\" \
@@ -273,6 +273,7 @@ sm.this.defines := \
   -DCOGL_ENABLE_DEBUG \
   -DHAVE_CONFIG_H \
   -DHAVE_COGL_GL \
+  -DHAVE_DIRECTLY_LINKED_GL_LIBRARY \
 
 sm.this.compile.flags := -fPIC \
   $(shell pkg-config --cflags glib-2.0) \
@@ -296,9 +297,9 @@ sm.this.libs := \
   -lGL -ldrm -lX11 -lXext -lXdamage -lXfixes -lXcomposite -lm -ldl
 
 sm.this.export.defines := \
-  -DCOGL_ENABLE_DEBUG \
   -DHAVE_CONFIG_H \
   -DHAVE_COGL_GL \
+  -DCOGL_ENABLE_EXPERIMENTAL_API \
 
 sm.this.export.includes := \
   $(sm.this.dir)/.. \
@@ -307,6 +308,9 @@ sm.this.export.compile.flags := \
   $(shell pkg-config --cflags glib-2.0) \
   $(shell pkg-config --cflags gdk-pixbuf-2.0) \
   $(shell pkg-config --cflags cairo) \
+
+sm.this.export.link.flags := \
+  -Wl,-rpath=$(sm.out.lib) \
 
 sm.this.export.libdirs := $(sm.out.lib)
 sm.this.export.libs := cogl \
