@@ -9,6 +9,8 @@ COGL_DRIVER_GLES_SUPPORTED :=
 SUPPORT_XLIB := true
 SUPPORT_GLX := true
 
+COGL_DRIVER := gl
+
 cogl.driver.sources :=
 
 ifneq ($(COGL_DRIVER_GL_SUPPORTED),)
@@ -250,13 +252,47 @@ sm.this.sources += \
   winsys/cogl-winsys-egl-private.h
 endif
 
+sm.this.verbose := true
+
+sm.this.sources := $(filter-out %.h,$(sm.this.sources))
+
 sm.this.includes := \
   $(sm.this.dir) \
   $(sm.this.dir)/.. \
   $(sm.this.dir)/winsys \
+  $(sm.this.dir)/$(COGL_DRIVER) \
+  /usr/include/drm
 
 sm.this.defines := \
+  -DG_LOG_DOMAIN=\"Cogl\" \
   -DCLUTTER_COMPILATION \
-  -DHAVE_COGL_GL
+  -DCOGL_GL_LIBNAME=\"$(COGL_GL_LIBNAME)\" \
+  -DCOGL_GLES1_LIBNAME=\"$(COGL_GLES1_LIBNAME)\" \
+  -DCOGL_GLES2_LIBNAME=\"$(COGL_GLES2_LIBNAME)\" \
+  -DCOGL_LOCALEDIR=\""$(localedir)"\" \
+  -DCOGL_ENABLE_DEBUG \
+  -DHAVE_CONFIG_H \
+  -DHAVE_COGL_GL \
+
+sm.this.compile.flags := -fPIC \
+  $(shell pkg-config --cflags glib-2.0) \
+  $(shell pkg-config --cflags gdk-pixbuf-2.0) \
+  $(shell pkg-config --cflags cairo) \
+
+sm.this.link.flags := \
+  -Wl,-no-undefined \
+  -Wl,-export-dynamic \
+
+#  -Wl,version-info 1:0:0 \
+#  -Wl,export-symbols-regex "^(cogl|_cogl_debug_flags|_cogl_atlas_new|_cogl_atlas_add_reorganize_callback|_cogl_atlas_reserve_space|_cogl_callback|_cogl_util_get_eye_planes_for_screen_poly|_cogl_atlas_texture_remove_reorganize_callback|_cogl_atlas_texture_add_reorganize_callback|_cogl_texture_foreach_sub_texture_in_region|_cogl_atlas_texture_new_with_size|_cogl_profile_trace_message|_cogl_context_get_default).*"
+
+sm.this.libs := \
+  $(shell pkg-config --libs gdk-pixbuf-2.0) \
+  $(shell pkg-config --libs gobject-2.0) \
+  $(shell pkg-config --libs gthread-2.0) \
+  $(shell pkg-config --libs gmodule-2.0) \
+  $(shell pkg-config --libs glib-2.0) \
+  $(shell pkg-config --libs cairo) \
+  -lGL -ldrm -lX11 -lXext -lXdamage -lXfixes -lXcomposite -lm -ldl
 
 $(sm-build-this)
