@@ -3,4 +3,6 @@
 #
 $(call sm-load-subdirs,\
     cogl \
-    examples)
+    cogl-pango \
+    examples \
+    tests)

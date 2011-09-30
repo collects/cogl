@@ -295,4 +295,22 @@ sm.this.libs := \
   $(shell pkg-config --libs cairo) \
   -lGL -ldrm -lX11 -lXext -lXdamage -lXfixes -lXcomposite -lm -ldl
 
+sm.this.export.defines := \
+  -DCOGL_ENABLE_DEBUG \
+  -DHAVE_CONFIG_H \
+  -DHAVE_COGL_GL \
+
+sm.this.export.includes := \
+  $(sm.this.dir)/.. \
+
+sm.this.export.compile.flags := \
+  $(shell pkg-config --cflags glib-2.0) \
+  $(shell pkg-config --cflags gdk-pixbuf-2.0) \
+  $(shell pkg-config --cflags cairo) \
+
+sm.this.export.libdirs := $(sm.out.lib)
+sm.this.export.libs := cogl \
+  $(sm.this.libs)
+
+$(sm-generate-implib)
 $(sm-build-this)
