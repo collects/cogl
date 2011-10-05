@@ -14,7 +14,6 @@ unported_test_sources = \
 	test-blend-strings.c \
 	test-fixed.c \
 	test-materials.c \
-	test-pipeline-user-matrix.c \
 	test-viewport.c \
 	test-multitexture.c \
 	test-npot-texture.c \
@@ -36,13 +35,14 @@ unported_test_sources = \
 	test-vertex-buffer-mutability.c \
 	test-wrap-modes.c \
 	test-primitive.c \
-	test-just-vertex-shader.c \
 	$(NULL)
 
 test_sources = \
 	test-depth-test.c \
 	test-color-mask.c \
 	test-backface-culling.c \
+	test-just-vertex-shader.c \
+	test-pipeline-user-matrix.c \
 	$(NULL)
 
 test_conformance_SOURCES = $(common_sources) $(test_sources)
