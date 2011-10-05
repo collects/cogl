@@ -52,6 +52,57 @@ cogl.tesselator.sources :=	\
   tesselator/GL/glu.h 		\
   $(null)
 
+sm.this.public.headers := \
+  cogl-object.h 		\
+  cogl-bitmap.h 		\
+  cogl-buffer.h 		\
+  cogl-color.h 			\
+  cogl-fixed.h 			\
+  cogl-depth-state.h 		\
+  cogl-material-compat.h 	\
+  cogl-vector.h 		\
+  cogl-euler.h 			\
+  cogl-quaternion.h 		\
+  cogl-matrix.h 		\
+  cogl-offscreen.h 		\
+  cogl-primitives.h 		\
+  cogl-path.h 			\
+  cogl-pixel-buffer.h		\
+  cogl-shader.h 		\
+  cogl-texture.h 		\
+  cogl-texture-3d.h             \
+  cogl-texture-2d.h             \
+  cogl-types.h 			\
+  cogl-vertex-buffer.h 		\
+  cogl-index-buffer.h 		\
+  cogl-attribute-buffer.h 	\
+  cogl-indices.h 		\
+  cogl-attribute.h 		\
+  cogl-primitive.h 		\
+  cogl-clip-state.h		\
+  cogl-framebuffer.h		\
+  cogl-clutter.h       		\
+  cogl.h			\
+
+sm.this.public.headers += \
+  cogl-renderer.h 		\
+  cogl-swap-chain.h 		\
+  cogl-onscreen-template.h 	\
+  cogl-display.h 		\
+  cogl-context.h 		\
+  cogl-pipeline.h 		\
+  cogl-pipeline-state.h 	\
+  cogl-pipeline-layer-state.h 	\
+  cogl2-path.h 			\
+  cogl2-clip-state.h		\
+  cogl2-experimental.h		\
+
+sm.this.public.headers += \
+  cogl-deprecated.h \
+  cogl-pango.h \
+  cogl-defines.h \
+  cogl-enum-types.h
+
 sm.this.sources := \
   $(cogl.driver.sources)	\
   $(cogl.winsys.common.sources)	\
@@ -221,6 +272,14 @@ sm.this.sources += \
   cogl-xlib-private.h \
   winsys/cogl-texture-pixmap-x11.c \
   winsys/cogl-texture-pixmap-x11-private.h
+
+sm.this.public.headers += \
+  cogl-xlib-renderer.h
+
+sm.this.public.headers += \
+  winsys/cogl-texture-pixmap-x11.h \
+  cogl-xlib.h
+
 endif
 
 ifneq ($(SUPPORT_GLX),)
@@ -295,7 +354,7 @@ sm.this.export.defines := \
   -DCOGL_ENABLE_EXPERIMENTAL_API \
 
 sm.this.export.includes := \
-  $(sm.this.dir)/.. \
+  $(sm.this.dir)/../$(sm.out.inc) \
 
 sm.this.export.compile.flags := \
   $(shell pkg-config --cflags glib-2.0) \
@@ -305,9 +364,11 @@ sm.this.export.compile.flags := \
 sm.this.export.link.flags := \
   -Wl,-rpath=$(sm.out.lib) \
 
-sm.this.export.libdirs := $(sm.out.lib)
+sm.this.export.libdirs := $(sm.this.dir)/../$(sm.out.lib)
 sm.this.export.libs := cogl \
   $(sm.this.libs)
+
+$(call sm-copy-headers, $(sm.this.public.headers), cogl)
 
 $(sm-generate-implib)
 $(sm-build-this)

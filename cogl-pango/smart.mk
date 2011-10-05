@@ -14,6 +14,9 @@ sm.this.sources := \
   cogl-pango-glyph-cache.c    \
   cogl-pango-pipeline-cache.c \
 
+sm.this.public.headers := \
+  cogl-pango.h
+
 sm.this.defines := \
   -DCLUTTER_COMPILATION \
   -DG_LOG_DOMAIN=\"CoglPango\" \
@@ -36,9 +39,11 @@ sm.this.libs := \
 sm.this.export.compile.flags := \
   $(shell pkg-config --cflags pango) \
 
-sm.this.export.libdirs := $(sm.out.lib)
+sm.this.export.libdirs := $(sm.this.dir)/../$(sm.out.lib)
 sm.this.export.libs := cogl-pango \
   $(sm.this.libs)
+
+$(call sm-copy-headers, $(sm.this.public.headers), cogl-pango)
 
 $(sm-generate-implib)
 $(sm-build-this)
