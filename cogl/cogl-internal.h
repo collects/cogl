@@ -32,29 +32,6 @@
 #include <X11/Xutil.h>
 #endif
 
-typedef enum {
-  COGL_BOXED_NONE,
-  COGL_BOXED_INT,
-  COGL_BOXED_FLOAT,
-  COGL_BOXED_MATRIX
-} CoglBoxedType;
-
-typedef struct _CoglBoxedValue
-{
-  CoglBoxedType type;
-  int size, count;
-  gboolean transpose;
-
-  union {
-    float float_value[4];
-    int int_value[4];
-    float matrix[16];
-    float *float_array;
-    int *int_array;
-    void *array;
-  } v;
-} CoglBoxedValue;
-
 #ifdef COGL_GL_DEBUG
 
 const char *
@@ -128,7 +105,12 @@ typedef enum
 typedef enum
 {
   COGL_PRIVATE_FEATURE_TEXTURE_2D_FROM_EGL_IMAGE = 1L<<0,
-  COGL_PRIVATE_FEATURE_MESA_PACK_INVERT = 1L<<1
+  COGL_PRIVATE_FEATURE_MESA_PACK_INVERT = 1L<<1,
+  COGL_PRIVATE_FEATURE_STENCIL_BUFFER = 1L<<2,
+  COGL_PRIVATE_FEATURE_OFFSCREEN_BLIT = 1L<<3,
+  COGL_PRIVATE_FEATURE_FOUR_CLIP_PLANES = 1L<<4,
+  COGL_PRIVATE_FEATURE_PBOS = 1L<<5,
+  COGL_PRIVATE_FEATURE_VBOS = 1L<<6
 } CoglPrivateFeatureFlags;
 
 /* Sometimes when evaluating pipelines, either during comparisons or

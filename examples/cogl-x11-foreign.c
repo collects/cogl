@@ -1,4 +1,5 @@
 #include <cogl/cogl.h>
+#include <cogl/cogl-xlib.h>
 #include <glib.h>
 #include <stdio.h>
 
@@ -11,8 +12,6 @@
    ButtonPressMask | \
    ButtonReleaseMask | \
    PointerMotionMask)
-
-CoglColor black;
 
 static void
 update_cogl_x11_event_mask (CoglOnscreen *onscreen,
@@ -43,6 +42,7 @@ main (int argc, char **argv)
   CoglContext *ctx;
   CoglOnscreen *onscreen;
   CoglFramebuffer *fb;
+  CoglPipeline *pipeline;
   GError *error = NULL;
   guint32 visual;
   XVisualInfo template, *xvisinfo;
@@ -145,23 +145,19 @@ main (int argc, char **argv)
                                             update_cogl_x11_event_mask,
                                             xdpy);
 
-  fb = COGL_FRAMEBUFFER (onscreen);
-  /* Eventually there will be an implicit allocate on first use so this
-   * will become optional... */
-  if (!cogl_framebuffer_allocate (fb, &error))
-    {
-      fprintf (stderr, "Failed to allocate framebuffer: %s\n", error->message);
-      return 1;
-    }
-
   XMapWindow (xdpy, xwin);
 
-  cogl_push_framebuffer (fb);
+  fb = COGL_FRAMEBUFFER (onscreen);
 
-  triangle = cogl_primitive_new_p2c4 (COGL_VERTICES_MODE_TRIANGLES,
+  triangle = cogl_primitive_new_p2c4 (ctx, COGL_VERTICES_MODE_TRIANGLES,
                                       3, triangle_vertices);
+  pipeline = cogl_pipeline_new ();
   for (;;)
     {
+      CoglPollFD *poll_fds;
+      int n_poll_fds;
+      gint64 timeout;
+
       while (XPending (xdpy))
         {
           XEvent event;
@@ -174,9 +170,13 @@ main (int argc, char **argv)
             }
           cogl_xlib_renderer_handle_event (renderer, &event);
         }
-      cogl_clear (&black, COGL_BUFFER_BIT_COLOR);
-      cogl_primitive_draw (triangle);
+      cogl_framebuffer_clear4f (fb, COGL_BUFFER_BIT_COLOR, 0, 0, 0, 1);
+      cogl_framebuffer_draw_primitive (fb, pipeline, triangle);
       cogl_framebuffer_swap_buffers (fb);
+
+      cogl_poll_get_info (ctx, &poll_fds, &n_poll_fds, &timeout);
+      g_poll ((GPollFD *) poll_fds, n_poll_fds, 0);
+      cogl_poll_dispatch (ctx, poll_fds, n_poll_fds);
     }
 
   return 0;

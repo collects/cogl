@@ -46,7 +46,8 @@ FIXXREF_OPTIONS=\
 # e.g. CFILE_GLOB=$(top_srcdir)/gtk/*.c
 HFILE_GLOB=\
 	$(top_srcdir)/cogl/*.h \
-	$(top_builddir)/cogl/*.h
+	$(top_builddir)/cogl/*.h \
+	$(top_srcdir)/cogl/winsys/*.h
 CFILE_GLOB=$(top_srcdir)/cogl/*.c
 
 # Header files to ignore when scanning.
@@ -59,6 +60,7 @@ IGNORE_HFILES=\
 	cogl-color-private.h			\
 	cogl-feature-private.h			\
 	cogl-framebuffer-private.h		\
+	cogl-onscreen-private.h			\
 	cogl-gtype-private.h			\
 	cogl-index-array-private.h		\
 	cogl-indices-private.h			\
@@ -87,6 +89,7 @@ IGNORE_HFILES=\
 	cogl-program.h				\
 	cogl-shader-private.h			\
 	cogl-shader.h				\
+	cogl-snippet-private.h			\
 	cogl-sub-texture-private.h		\
 	cogl-texture-2d-private.h		\
 	cogl-texture-2d-sliced-private.h	\
@@ -110,8 +113,7 @@ IGNORE_HFILES=\
 	cogl-profile.h				\
 	cogl-util.h 				\
 	driver 					\
-	tesselator				\
-	winsys
+	tesselator
 
 EXTRA_HFILES=
 

@@ -29,6 +29,8 @@
 #include "config.h"
 #endif
 
+#include <string.h>
+
 #include "cogl-context-private.h"
 #include "cogl-pipeline-private.h"
 #include "cogl-pipeline-opengl-private.h"
@@ -41,6 +43,7 @@
 #include "cogl-handle.h"
 #include "cogl-program-private.h"
 #include "cogl-pipeline-vertend-glsl-private.h"
+#include "cogl-pipeline-state-private.h"
 
 const CoglPipelineVertend _cogl_pipeline_glsl_vertend;
 
@@ -56,6 +59,11 @@ typedef struct
      program changes then we may need to redecide whether to generate
      a shader at all */
   unsigned int user_program_age;
+
+  /* The number of tex coord attributes that the shader was generated
+     for. If this changes on GLES2 then we need to regenerate the
+     shader */
+  int n_tex_coord_attribs;
 } CoglPipelineShaderState;
 
 static CoglUserDataKey shader_state_key;
@@ -123,10 +131,30 @@ _cogl_pipeline_vertend_glsl_get_shader (CoglPipeline *pipeline)
     return 0;
 }
 
+static CoglPipelineSnippetList *
+get_vertex_snippets (CoglPipeline *pipeline)
+{
+  pipeline =
+    _cogl_pipeline_get_authority (pipeline,
+                                  COGL_PIPELINE_STATE_VERTEX_SNIPPETS);
+
+  return &pipeline->big_state->vertex_snippets;
+}
+
+static CoglPipelineSnippetList *
+get_layer_vertex_snippets (CoglPipelineLayer *layer)
+{
+  unsigned long state = COGL_PIPELINE_LAYER_STATE_VERTEX_SNIPPETS;
+  layer = _cogl_pipeline_layer_get_authority (layer, state);
+
+  return &layer->big_state->vertex_snippets;
+}
+
 static gboolean
 _cogl_pipeline_vertend_glsl_start (CoglPipeline *pipeline,
                                    int n_layers,
-                                   unsigned long pipelines_difference)
+                                   unsigned long pipelines_difference,
+                                   int n_tex_coord_attribs)
 {
   CoglPipelineShaderState *shader_state;
   CoglPipeline *template_pipeline = NULL;
@@ -134,7 +162,7 @@ _cogl_pipeline_vertend_glsl_start (CoglPipeline *pipeline,
 
   _COGL_GET_CONTEXT (ctx, FALSE);
 
-  if (!cogl_features_available (COGL_FEATURE_SHADERS_GLSL))
+  if (!cogl_has_feature (ctx, COGL_FEATURE_ID_GLSL))
     return FALSE;
 
   user_program = cogl_pipeline_get_user_program (pipeline);
@@ -203,9 +231,14 @@ _cogl_pipeline_vertend_glsl_start (CoglPipeline *pipeline,
     {
       /* If we already have a valid GLSL shader then we don't need to
          generate a new one. However if there's a user program and it
-         has changed since the last link then we do need a new shader */
-      if (user_program == NULL ||
-          shader_state->user_program_age == user_program->age)
+         has changed since the last link then we do need a new
+         shader. If the number of tex coord attribs changes on GLES2
+         then we need to regenerate the shader with a different boiler
+         plate */
+      if ((user_program == NULL ||
+           shader_state->user_program_age == user_program->age)
+          && (ctx->driver != COGL_DRIVER_GLES2 ||
+              shader_state->n_tex_coord_attribs == n_tex_coord_attribs))
         return TRUE;
 
       /* We need to recreate the shader so destroy the existing one */
@@ -219,6 +252,8 @@ _cogl_pipeline_vertend_glsl_start (CoglPipeline *pipeline,
 
   if (user_program)
     shader_state->user_program_age = user_program->age;
+
+  shader_state->n_tex_coord_attribs = n_tex_coord_attribs;
 
   /* If the user program contains a vertex shader then we don't need
      to generate one */
@@ -238,7 +273,7 @@ _cogl_pipeline_vertend_glsl_start (CoglPipeline *pipeline,
 
   g_string_append (shader_state->source,
                    "void\n"
-                   "main ()\n"
+                   "cogl_generated_source ()\n"
                    "{\n");
 
   if (ctx->driver == COGL_DRIVER_GLES2)
@@ -268,6 +303,7 @@ _cogl_pipeline_vertend_glsl_add_layer (CoglPipeline *pipeline,
                                        unsigned long layers_difference)
 {
   CoglPipelineShaderState *shader_state;
+  CoglPipelineSnippetData snippet_data;
   int unit_index;
 
   _COGL_GET_CONTEXT (ctx, FALSE);
@@ -293,8 +329,10 @@ _cogl_pipeline_vertend_glsl_add_layer (CoglPipeline *pipeline,
 
           _cogl_set_active_texture_unit (unit_index);
 
-          _cogl_matrix_stack_flush_to_gl (unit->matrix_stack,
-                                          COGL_MATRIX_TEXTURE);
+          _cogl_matrix_stack_flush_to_gl_builtins (ctx,
+                                                   unit->matrix_stack,
+                                                   COGL_MATRIX_TEXTURE,
+                                                   FALSE /* do flip */);
         }
     }
 
@@ -312,10 +350,47 @@ _cogl_pipeline_vertend_glsl_add_layer (CoglPipeline *pipeline,
    * avoid setting them if not
    */
 
+  g_string_append_printf (shader_state->header,
+                          "vec4\n"
+                          "cogl_real_transform_layer%i (mat4 matrix, "
+                          "vec4 tex_coord)\n"
+                          "{\n"
+                          "  return matrix * tex_coord;\n"
+                          "}\n",
+                          unit_index);
+
+  /* Wrap the layer code in any snippets that have been hooked */
+  memset (&snippet_data, 0, sizeof (snippet_data));
+  snippet_data.snippets = get_layer_vertex_snippets (layer);
+  snippet_data.hook = COGL_SNIPPET_HOOK_TEXTURE_COORD_TRANSFORM;
+  snippet_data.chain_function = g_strdup_printf ("cogl_real_transform_layer%i",
+                                                 unit_index);
+  snippet_data.final_name = g_strdup_printf ("cogl_transform_layer%i",
+                                             unit_index);
+  snippet_data.function_prefix = g_strdup_printf ("cogl_transform_layer%i",
+                                                  unit_index);
+  snippet_data.return_type = "vec4";
+  snippet_data.return_variable = "cogl_tex_coord";
+  snippet_data.return_variable_is_argument = TRUE;
+  snippet_data.arguments = "cogl_matrix, cogl_tex_coord";
+  snippet_data.argument_declarations = "mat4 cogl_matrix, vec4 cogl_tex_coord";
+  snippet_data.source_buf = shader_state->header;
+
+  _cogl_pipeline_snippet_generate_code (&snippet_data);
+
+  g_free ((char *) snippet_data.chain_function);
+  g_free ((char *) snippet_data.final_name);
+  g_free ((char *) snippet_data.function_prefix);
+
   g_string_append_printf (shader_state->source,
                           "  cogl_tex_coord_out[%i] = "
-                          "cogl_texture_matrix[%i] * cogl_tex_coord%i_in;\n",
-                          unit_index, unit_index, unit_index);
+                          "cogl_transform_layer%i (cogl_texture_matrix[%i],\n"
+                          "                           "
+                          "                        cogl_tex_coord%i_in);\n",
+                          unit_index,
+                          unit_index,
+                          unit_index,
+                          unit_index);
 
   return TRUE;
 }
@@ -336,7 +411,8 @@ _cogl_pipeline_vertend_glsl_end (CoglPipeline *pipeline,
       GLint lengths[2];
       GLint compile_status;
       GLuint shader;
-      int n_layers;
+      CoglPipelineSnippetData snippet_data;
+      CoglPipelineSnippetList *vertex_snippets;
 
       COGL_STATIC_COUNTER (vertend_glsl_compile_counter,
                            "glsl vertex compile counter",
@@ -345,11 +421,61 @@ _cogl_pipeline_vertend_glsl_end (CoglPipeline *pipeline,
                            0 /* no application private data */);
       COGL_COUNTER_INC (_cogl_uprof_context, vertend_glsl_compile_counter);
 
-      g_string_append (shader_state->source,
+      g_string_append (shader_state->header,
+                       "void\n"
+                       "cogl_real_vertex_transform ()\n"
+                       "{\n"
                        "  cogl_position_out = "
                        "cogl_modelview_projection_matrix * "
                        "cogl_position_in;\n"
+                       "}\n");
+
+      g_string_append (shader_state->source,
+                       "  cogl_vertex_transform ();\n"
                        "  cogl_color_out = cogl_color_in;\n"
+                       "}\n");
+
+      vertex_snippets = get_vertex_snippets (pipeline);
+
+      /* Add hooks for the vertex transform part */
+      memset (&snippet_data, 0, sizeof (snippet_data));
+      snippet_data.snippets = vertex_snippets;
+      snippet_data.hook = COGL_SNIPPET_HOOK_VERTEX_TRANSFORM;
+      snippet_data.chain_function = "cogl_real_vertex_transform";
+      snippet_data.final_name = "cogl_vertex_transform";
+      snippet_data.function_prefix = "cogl_vertex_transform";
+      snippet_data.source_buf = shader_state->header;
+      _cogl_pipeline_snippet_generate_code (&snippet_data);
+
+      /* Add all of the hooks for vertex processing */
+      memset (&snippet_data, 0, sizeof (snippet_data));
+      snippet_data.snippets = vertex_snippets;
+      snippet_data.hook = COGL_SNIPPET_HOOK_VERTEX;
+      snippet_data.chain_function = "cogl_generated_source";
+      snippet_data.final_name = "cogl_vertex_hook";
+      snippet_data.function_prefix = "cogl_vertex_hook";
+      snippet_data.source_buf = shader_state->source;
+      _cogl_pipeline_snippet_generate_code (&snippet_data);
+
+      g_string_append (shader_state->source,
+                       "void\n"
+                       "main ()\n"
+                       "{\n"
+                       "  cogl_vertex_hook ();\n");
+
+      /* If there are any snippets then we can't rely on the
+         projection matrix to flip the rendering for offscreen buffers
+         so we'll need to flip it using an extra statement and a
+         uniform */
+      if (_cogl_pipeline_has_vertex_snippets (pipeline))
+        {
+          g_string_append (shader_state->header,
+                           "uniform vec4 _cogl_flip_vector;\n");
+          g_string_append (shader_state->source,
+                           "  cogl_position_out *= _cogl_flip_vector;\n");
+        }
+
+      g_string_append (shader_state->source,
                        "}\n");
 
       GE_RET( shader, ctx, glCreateShader (GL_VERTEX_SHADER) );
@@ -359,10 +485,9 @@ _cogl_pipeline_vertend_glsl_end (CoglPipeline *pipeline,
       lengths[1] = shader_state->source->len;
       source_strings[1] = shader_state->source->str;
 
-      n_layers = cogl_pipeline_get_n_layers (pipeline);
-
       _cogl_shader_set_source_with_boilerplate (shader, GL_VERTEX_SHADER,
-                                                n_layers,
+                                                shader_state
+                                                ->n_tex_coord_attribs,
                                                 2, /* count */
                                                 source_strings, lengths);
 

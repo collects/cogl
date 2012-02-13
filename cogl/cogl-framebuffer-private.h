@@ -28,6 +28,8 @@
 #include "cogl-matrix-stack.h"
 #include "cogl-clip-state-private.h"
 #include "cogl-journal-private.h"
+#include "cogl-winsys-private.h"
+#include "cogl-attribute-private.h"
 
 #ifdef COGL_HAS_XLIB_SUPPORT
 #include <X11/Xlib.h>
@@ -38,20 +40,67 @@
 #include <GL/glxext.h>
 #endif
 
-#ifdef COGL_HAS_WIN32_SUPPORT
-#include <windows.h>
-#endif
-
 typedef enum _CoglFramebufferType {
   COGL_FRAMEBUFFER_TYPE_ONSCREEN,
   COGL_FRAMEBUFFER_TYPE_OFFSCREEN
 } CoglFramebufferType;
+
+typedef struct
+{
+  CoglSwapChain *swap_chain;
+  gboolean need_stencil;
+  int samples_per_pixel;
+  gboolean swap_throttled;
+} CoglFramebufferConfig;
+
+/* Flags to pass to _cogl_offscreen_new_to_texture_full */
+typedef enum
+{
+  COGL_OFFSCREEN_DISABLE_DEPTH_AND_STENCIL = 1
+} CoglOffscreenFlags;
+
+/* XXX: The order of these indices determines the order they are
+ * flushed.
+ *
+ * Flushing clip state may trash the modelview and projection matrices
+ * so we must do it before flushing the matrices.
+ */
+typedef enum _CoglFramebufferStateIndex
+{
+  COGL_FRAMEBUFFER_STATE_INDEX_BIND               = 0,
+  COGL_FRAMEBUFFER_STATE_INDEX_VIEWPORT           = 1,
+  COGL_FRAMEBUFFER_STATE_INDEX_CLIP               = 2,
+  COGL_FRAMEBUFFER_STATE_INDEX_DITHER             = 3,
+  COGL_FRAMEBUFFER_STATE_INDEX_MODELVIEW          = 4,
+  COGL_FRAMEBUFFER_STATE_INDEX_PROJECTION         = 5,
+  COGL_FRAMEBUFFER_STATE_INDEX_COLOR_MASK         = 6,
+  COGL_FRAMEBUFFER_STATE_INDEX_FRONT_FACE_WINDING = 7,
+  COGL_FRAMEBUFFER_STATE_INDEX_MAX                = 8
+} CoglFramebufferStateIndex;
+
+typedef enum _CoglFramebufferState
+{
+  COGL_FRAMEBUFFER_STATE_BIND               = 1<<0,
+  COGL_FRAMEBUFFER_STATE_VIEWPORT           = 1<<1,
+  COGL_FRAMEBUFFER_STATE_CLIP               = 1<<2,
+  COGL_FRAMEBUFFER_STATE_DITHER             = 1<<3,
+  COGL_FRAMEBUFFER_STATE_MODELVIEW          = 1<<4,
+  COGL_FRAMEBUFFER_STATE_PROJECTION         = 1<<5,
+  COGL_FRAMEBUFFER_STATE_COLOR_MASK         = 1<<6,
+  COGL_FRAMEBUFFER_STATE_FRONT_FACE_WINDING = 1<<7
+} CoglFramebufferState;
+
+#define COGL_FRAMEBUFFER_STATE_ALL ((1<<COGL_FRAMEBUFFER_STATE_INDEX_MAX) - 1)
 
 struct _CoglFramebuffer
 {
   CoglObject          _parent;
   CoglContext        *context;
   CoglFramebufferType  type;
+
+  /* The user configuration before allocation... */
+  CoglFramebufferConfig config;
+
   int                 width;
   int                 height;
   /* Format of the pixels in the framebuffer (including the expected
@@ -76,6 +125,8 @@ struct _CoglFramebuffer
 
   gboolean            dither_enabled;
   CoglColorMask       color_mask;
+
+  int                 samples_per_pixel;
 
   /* We journal the textured rectangles we want to submit to OpenGL so
    * we have an oppertunity to batch them together into less draw
@@ -108,42 +159,32 @@ typedef struct _CoglOffscreen
   CoglFramebuffer  _parent;
   GLuint          fbo_handle;
   GSList          *renderbuffers;
-  CoglTexture     *texture;
-} CoglOffscreen;
 
-/* Flags to pass to _cogl_offscreen_new_to_texture_full */
-typedef enum
-{
-  COGL_OFFSCREEN_DISABLE_DEPTH_AND_STENCIL = 1
-} CoglOffscreenFlags;
+  CoglTexture    *texture;
+  int             texture_level;
+  int             texture_level_width;
+  int             texture_level_height;
+
+  /* FIXME: _cogl_offscreen_new_to_texture_full should be made to use
+   * fb->config to configure if we want a depth or stencil buffer so
+   * we can get rid of these flags */
+  CoglOffscreenFlags create_flags;
+} CoglOffscreen;
 
 #define COGL_OFFSCREEN(X) ((CoglOffscreen *)(X))
 
-struct _CoglOnscreen
-{
-  CoglFramebuffer  _parent;
-
-#ifdef COGL_HAS_X11_SUPPORT
-  guint32 foreign_xid;
-  CoglOnscreenX11MaskCallback foreign_update_mask_callback;
-  void *foreign_update_mask_data;
-#endif
-
-#ifdef COGL_HAS_WIN32_SUPPORT
-  HWND foreign_hwnd;
-#endif
-
-  gboolean swap_throttled;
-
-  void *winsys;
-};
-
 void
-_cogl_framebuffer_state_init (void);
+_cogl_framebuffer_init (CoglFramebuffer *framebuffer,
+                        CoglContext *ctx,
+                        CoglFramebufferType type,
+                        CoglPixelFormat format,
+                        int width,
+                        int height);
 
-void
-_cogl_framebuffer_winsys_update_size (CoglFramebuffer *framebuffer,
-                                      int width, int height);
+void _cogl_framebuffer_free (CoglFramebuffer *framebuffer);
+
+const CoglWinsysVtable *
+_cogl_framebuffer_get_winsys (CoglFramebuffer *framebuffer);
 
 void
 _cogl_framebuffer_clear_without_flush4f (CoglFramebuffer *framebuffer,
@@ -212,26 +253,10 @@ _cogl_framebuffer_try_fast_read_pixel (CoglFramebuffer *framebuffer,
                                        CoglPixelFormat format,
                                        guint8 *pixel);
 
-typedef enum _CoglFramebufferFlushFlags
-{
-  /* XXX: When using this, that imples you are going to manually load the
-   * modelview matrix (via glLoadMatrix). _cogl_matrix_stack_flush_to_gl wont
-   * be called for framebuffer->modelview_stack, and the modelview_stack will
-   * also be marked as dirty. */
-  COGL_FRAMEBUFFER_FLUSH_SKIP_MODELVIEW =     1L<<0,
-  /* Similarly this flag implies you are going to flush the clip state
-     yourself */
-  COGL_FRAMEBUFFER_FLUSH_SKIP_CLIP_STATE =    1L<<1,
-  /* When using this all that will be updated is the glBindFramebuffer
-   * state and corresponding winsys state to make the framebuffer
-   * current if it is a CoglOnscreen framebuffer. */
-  COGL_FRAMEBUFFER_FLUSH_BIND_ONLY =          1L<<2
-} CoglFramebufferFlushFlags;
-
 void
 _cogl_framebuffer_flush_state (CoglFramebuffer *draw_buffer,
                                CoglFramebuffer *read_buffer,
-                               CoglFramebufferFlushFlags flags);
+                               CoglFramebufferState state);
 
 CoglFramebuffer *
 _cogl_get_read_framebuffer (void);
@@ -287,7 +312,7 @@ _cogl_push_framebuffers (CoglFramebuffer *draw_buffer,
  * This blits a region of the color buffer of the current draw buffer
  * to the current read buffer. The draw and read buffers can be set up
  * using _cogl_push_framebuffers(). This function should only be
- * called if the COGL_FEATURE_OFFSCREEN_BLIT feature is
+ * called if the COGL_PRIVATE_FEATURE_OFFSCREEN_BLIT feature is
  * advertised. The two buffers must both be offscreen and have the
  * same format.
  *
@@ -328,8 +353,49 @@ _cogl_blit_framebuffer (unsigned int src_x,
                         unsigned int width,
                         unsigned int height);
 
-CoglOnscreen *
-_cogl_onscreen_new (void);
+void
+_cogl_framebuffer_push_projection (CoglFramebuffer *framebuffer);
+
+void
+_cogl_framebuffer_pop_projection (CoglFramebuffer *framebuffer);
+
+void
+_cogl_framebuffer_save_clip_stack (CoglFramebuffer *framebuffer);
+
+void
+_cogl_framebuffer_restore_clip_stack (CoglFramebuffer *framebuffer);
+
+void
+_cogl_framebuffer_unref (CoglFramebuffer *framebuffer);
+
+void
+_cogl_framebuffer_draw_primitive (CoglFramebuffer *framebuffer,
+                                  CoglPipeline *pipeline,
+                                  CoglPrimitive *primitive,
+                                  CoglDrawFlags flags);
+
+/* This can be called directly by the CoglJournal to draw attributes
+ * skipping the implicit journal flush, the framebuffer flush and
+ * pipeline validation. */
+void
+_cogl_framebuffer_draw_attributes (CoglFramebuffer *framebuffer,
+                                   CoglPipeline *pipeline,
+                                   CoglVerticesMode mode,
+                                   int first_vertex,
+                                   int n_vertices,
+                                   CoglAttribute **attributes,
+                                   int n_attributes,
+                                   CoglDrawFlags flags);
+
+void
+_cogl_framebuffer_draw_indexed_attributes (CoglFramebuffer *framebuffer,
+                                           CoglPipeline *pipeline,
+                                           CoglVerticesMode mode,
+                                           int first_vertex,
+                                           int n_vertices,
+                                           CoglIndices *indices,
+                                           CoglAttribute **attributes,
+                                           int n_attributes,
+                                           CoglDrawFlags flags);
 
 #endif /* __COGL_FRAMEBUFFER_PRIVATE_H */
-

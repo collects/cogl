@@ -32,6 +32,7 @@
 #include "cogl-debug.h"
 #include "cogl-context-private.h"
 #include "cogl-pipeline-private.h"
+#include "cogl-pipeline-state-private.h"
 #include "cogl-pipeline-layer-private.h"
 
 #ifdef COGL_PIPELINE_FRAGEND_ARBFP
@@ -171,11 +172,15 @@ _cogl_pipeline_fragend_arbfp_start (CoglPipeline *pipeline,
   /* First validate that we can handle the current state using ARBfp
    */
 
-  if (!cogl_features_available (COGL_FEATURE_SHADERS_ARBFP))
+  if (!cogl_has_feature (ctx, COGL_FEATURE_ID_ARBFP))
     return FALSE;
 
   /* TODO: support fog */
   if (_cogl_pipeline_get_fog_enabled (pipeline))
+    return FALSE;
+
+  /* Fragment snippets are only supported in the GLSL fragend */
+  if (_cogl_pipeline_has_fragment_snippets (pipeline))
     return FALSE;
 
   user_program = cogl_pipeline_get_user_program (pipeline);

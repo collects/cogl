@@ -16,20 +16,17 @@
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with this library. If not, see
- * <http://www.gnu.org/licenses/>.
+ * License along with this library. If not, see <http://www.gnu.org/licenses/>.
  *
  *
  */
 
-#ifndef __COGL_DISPLAY_XLIB_PRIVATE_H
-#define __COGL_DISPLAY_XLIB_PRIVATE_H
+#ifndef __COGL_WINSYS_EGL_ANDROID_PRIVATE_H
+#define __COGL_WINSYS_EGL_ANDROID_PRIVATE_H
 
-#include <X11/Xlib.h>
+#include "cogl-winsys-private.h"
 
-typedef struct _CoglXlibDisplay
-{
-  Window dummy_xwin;
-} CoglXlibDisplay;
+const CoglWinsysVtable *
+_cogl_winsys_egl_android_get_vtable (void);
 
-#endif /* __COGL_DISPLAY_XLIB_PRIVATE_H */
+#endif /* __COGL_WINSYS_EGL_ANDROID_PRIVATE_H */

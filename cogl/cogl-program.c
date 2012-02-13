@@ -27,6 +27,7 @@
 
 #include "cogl.h"
 
+#include "cogl-util.h"
 #include "cogl-internal.h"
 #include "cogl-context-private.h"
 #include "cogl-handle.h"
@@ -107,9 +108,9 @@ cogl_program_attach_shader (CoglHandle program_handle,
 
   /* Only one shader is allowed if the type is ARBfp */
   if (shader->language == COGL_SHADER_LANGUAGE_ARBFP)
-    g_return_if_fail (program->attached_shaders == NULL);
+    _COGL_RETURN_IF_FAIL (program->attached_shaders == NULL);
   else if (shader->language == COGL_SHADER_LANGUAGE_GLSL)
-    g_return_if_fail (_cogl_program_get_language (program) ==
+    _COGL_RETURN_IF_FAIL (_cogl_program_get_language (program) ==
                       COGL_SHADER_LANGUAGE_GLSL);
 
   program->attached_shaders
@@ -132,7 +133,7 @@ cogl_program_use (CoglHandle handle)
 {
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (handle == COGL_INVALID_HANDLE ||
+  _COGL_RETURN_IF_FAIL (handle == COGL_INVALID_HANDLE ||
                     cogl_is_program (handle));
 
   if (ctx->current_program == 0 && handle != 0)
@@ -188,70 +189,34 @@ cogl_program_get_uniform_location (CoglHandle handle,
   return program->custom_uniforms->len - 1;
 }
 
-static void
-cogl_program_uniform_x (CoglHandle handle,
-                        int uniform_no,
-                        int size,
-                        int count,
-                        CoglBoxedType type,
-                        gsize value_size,
-                        gconstpointer value,
-                        gboolean transpose)
+static CoglProgramUniform *
+cogl_program_modify_uniform (CoglProgram *program,
+                             int uniform_no)
 {
-  CoglProgram *program = handle;
+  CoglProgramUniform *uniform;
 
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_program (program), NULL);
+  _COGL_RETURN_VAL_IF_FAIL (uniform_no >= 0 &&
+                            uniform_no < program->custom_uniforms->len,
+                            NULL);
 
-  g_return_if_fail (cogl_is_program (handle));
-  g_return_if_fail (program != NULL);
+  uniform = &g_array_index (program->custom_uniforms,
+                            CoglProgramUniform, uniform_no);
+  uniform->dirty = TRUE;
 
-  if (uniform_no >= 0 && uniform_no < program->custom_uniforms->len &&
-      size >= 1 && size <= 4 && count >= 1)
-    {
-      CoglProgramUniform *uniform =
-        &g_array_index (program->custom_uniforms,
-                        CoglProgramUniform, uniform_no);
-
-      if (count == 1)
-        {
-          if (uniform->value.count > 1)
-            g_free (uniform->value.v.array);
-
-          memcpy (uniform->value.v.float_value, value, value_size);
-        }
-      else
-        {
-          if (uniform->value.count > 1)
-            {
-              if (uniform->value.count != count ||
-                  uniform->value.size != size ||
-                  uniform->value.type != type)
-                {
-                  g_free (uniform->value.v.array);
-                  uniform->value.v.array = g_malloc (count * value_size);
-                }
-            }
-          else
-            uniform->value.v.array = g_malloc (count * value_size);
-
-          memcpy (uniform->value.v.array, value, count * value_size);
-        }
-
-      uniform->value.type = type;
-      uniform->value.size = size;
-      uniform->value.count = count;
-      uniform->dirty = TRUE;
-    }
+  return uniform;
 }
 
 void
 cogl_program_uniform_1f (int uniform_no,
                          float  value)
 {
+  CoglProgramUniform *uniform;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-  cogl_program_uniform_x (ctx->current_program,
-                          uniform_no, 1, 1, COGL_BOXED_FLOAT,
-                          sizeof (float), &value, FALSE);
+
+  uniform = cogl_program_modify_uniform (ctx->current_program, uniform_no);
+  _cogl_boxed_value_set_1f (&uniform->value, value);
 }
 
 void
@@ -259,19 +224,22 @@ cogl_program_set_uniform_1f (CoglHandle handle,
                              int uniform_location,
                              float value)
 {
-  cogl_program_uniform_x (handle,
-                          uniform_location, 1, 1, COGL_BOXED_FLOAT,
-                          sizeof (float), &value, FALSE);
+  CoglProgramUniform *uniform;
+
+  uniform = cogl_program_modify_uniform (handle, uniform_location);
+  _cogl_boxed_value_set_1f (&uniform->value, value);
 }
 
 void
 cogl_program_uniform_1i (int uniform_no,
                          int value)
 {
+  CoglProgramUniform *uniform;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-  cogl_program_uniform_x (ctx->current_program,
-                          uniform_no, 1, 1, COGL_BOXED_INT,
-                          sizeof (int), &value, FALSE);
+
+  uniform = cogl_program_modify_uniform (ctx->current_program, uniform_no);
+  _cogl_boxed_value_set_1i (&uniform->value, value);
 }
 
 void
@@ -279,21 +247,24 @@ cogl_program_set_uniform_1i (CoglHandle handle,
                              int uniform_location,
                              int value)
 {
-  cogl_program_uniform_x (handle,
-                          uniform_location, 1, 1, COGL_BOXED_INT,
-                          sizeof (int), &value, FALSE);
+  CoglProgramUniform *uniform;
+
+  uniform = cogl_program_modify_uniform (handle, uniform_location);
+  _cogl_boxed_value_set_1i (&uniform->value, value);
 }
 
 void
 cogl_program_uniform_float (int uniform_no,
                             int size,
                             int count,
-                            const GLfloat *value)
+                            const float *value)
 {
+  CoglProgramUniform *uniform;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-  cogl_program_uniform_x (ctx->current_program,
-                          uniform_no, size, count, COGL_BOXED_FLOAT,
-                          sizeof (float) * size, value, FALSE);
+
+  uniform = cogl_program_modify_uniform (ctx->current_program, uniform_no);
+  _cogl_boxed_value_set_float (&uniform->value, size, count, value);
 }
 
 void
@@ -303,22 +274,24 @@ cogl_program_set_uniform_float (CoglHandle handle,
                                 int count,
                                 const float *value)
 {
-  cogl_program_uniform_x (handle,
-                          uniform_location, n_components, count,
-                          COGL_BOXED_FLOAT,
-                          sizeof (float) * n_components, value, FALSE);
+  CoglProgramUniform *uniform;
+
+  uniform = cogl_program_modify_uniform (handle, uniform_location);
+  _cogl_boxed_value_set_float (&uniform->value, n_components, count, value);
 }
 
 void
 cogl_program_uniform_int (int uniform_no,
                           int size,
                           int count,
-                          const GLint *value)
+                          const int *value)
 {
+  CoglProgramUniform *uniform;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-  cogl_program_uniform_x (ctx->current_program,
-                          uniform_no, size, count, COGL_BOXED_INT,
-                          sizeof (int) * size, value, FALSE);
+
+  uniform = cogl_program_modify_uniform (ctx->current_program, uniform_no);
+  _cogl_boxed_value_set_int (&uniform->value, size, count, value);
 }
 
 void
@@ -328,10 +301,10 @@ cogl_program_set_uniform_int (CoglHandle handle,
                               int count,
                               const int *value)
 {
-  cogl_program_uniform_x (handle,
-                          uniform_location, n_components, count,
-                          COGL_BOXED_INT,
-                          sizeof (int) * n_components, value, FALSE);
+  CoglProgramUniform *uniform;
+
+  uniform = cogl_program_modify_uniform (handle, uniform_location);
+  _cogl_boxed_value_set_int (&uniform->value, n_components, count, value);
 }
 
 void
@@ -342,14 +315,14 @@ cogl_program_set_uniform_matrix (CoglHandle handle,
                                  gboolean transpose,
                                  const float *value)
 {
-  g_return_if_fail (cogl_is_program (handle));
+  CoglProgramUniform *uniform;
 
-  cogl_program_uniform_x (handle,
-                          uniform_location, dimensions, count,
-                          COGL_BOXED_MATRIX,
-                          sizeof (float) * dimensions * dimensions,
-                          value,
-                          transpose);
+  uniform = cogl_program_modify_uniform (handle, uniform_location);
+  _cogl_boxed_value_set_matrix (&uniform->value,
+                                dimensions,
+                                count,
+                                transpose,
+                                value);
 }
 
 void
@@ -359,9 +332,12 @@ cogl_program_uniform_matrix (int uniform_no,
                              gboolean transpose,
                              const float *value)
 {
+  CoglProgramUniform *uniform;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-  cogl_program_set_uniform_matrix (ctx->current_program,
-                                   uniform_no, size, count, transpose, value);
+
+  uniform = cogl_program_modify_uniform (ctx->current_program, uniform_no);
+  _cogl_boxed_value_set_matrix (&uniform->value, size, count, transpose, value);
 }
 
 /* ARBfp local parameters can be referenced like:
@@ -383,95 +359,17 @@ get_local_param_index (const char *uniform_name)
       *p++ = input[i];
   input[i] = '\0';
 
-  g_return_val_if_fail (strncmp ("program.local[", input, 14) == 0, -1);
+  _COGL_RETURN_VAL_IF_FAIL (strncmp ("program.local[", input, 14) == 0, -1);
 
   _index = g_ascii_strtoull (input + 14, &endptr, 10);
-  g_return_val_if_fail (endptr != input + 14, -1);
-  g_return_val_if_fail (*endptr == ']', -1);
+  _COGL_RETURN_VAL_IF_FAIL (endptr != input + 14, -1);
+  _COGL_RETURN_VAL_IF_FAIL (*endptr == ']', -1);
 
-  g_return_val_if_fail (_index >= 0, -1);
+  _COGL_RETURN_VAL_IF_FAIL (_index >= 0, -1);
 
   g_free (input);
 
   return _index;
-}
-
-static void
-_cogl_program_flush_uniform_glsl (GLint location,
-                                  CoglBoxedValue *value)
-{
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  switch (value->type)
-    {
-    case COGL_BOXED_NONE:
-      break;
-
-    case COGL_BOXED_INT:
-      {
-        int *ptr;
-
-        if (value->count == 1)
-          ptr = value->v.int_value;
-        else
-          ptr = value->v.int_array;
-
-        switch (value->size)
-          {
-          case 1: ctx->glUniform1iv (location, value->count, ptr); break;
-          case 2: ctx->glUniform2iv (location, value->count, ptr); break;
-          case 3: ctx->glUniform3iv (location, value->count, ptr); break;
-          case 4: ctx->glUniform4iv (location, value->count, ptr); break;
-          }
-      }
-      break;
-
-    case COGL_BOXED_FLOAT:
-      {
-        float *ptr;
-
-        if (value->count == 1)
-          ptr = value->v.float_value;
-        else
-          ptr = value->v.float_array;
-
-        switch (value->size)
-          {
-          case 1: ctx->glUniform1fv (location, value->count, ptr); break;
-          case 2: ctx->glUniform2fv (location, value->count, ptr); break;
-          case 3: ctx->glUniform3fv (location, value->count, ptr); break;
-          case 4: ctx->glUniform4fv (location, value->count, ptr); break;
-          }
-      }
-      break;
-
-    case COGL_BOXED_MATRIX:
-      {
-        float *ptr;
-
-        if (value->count == 1)
-          ptr = value->v.matrix;
-        else
-          ptr = value->v.float_array;
-
-        switch (value->size)
-          {
-          case 2:
-            ctx->glUniformMatrix2fv (location, value->count,
-                                     value->transpose, ptr);
-            break;
-          case 3:
-            ctx->glUniformMatrix3fv (location, value->count,
-                                     value->transpose, ptr);
-            break;
-          case 4:
-            ctx->glUniformMatrix4fv (location, value->count,
-                                     value->transpose, ptr);
-            break;
-          }
-      }
-      break;
-    }
 }
 
 #ifdef HAVE_COGL_GL
@@ -484,9 +382,9 @@ _cogl_program_flush_uniform_arbfp (GLint location,
 
   if (value->type != COGL_BOXED_NONE)
     {
-      g_return_if_fail (value->type == COGL_BOXED_FLOAT);
-      g_return_if_fail (value->size == 4);
-      g_return_if_fail (value->count == 1);
+      _COGL_RETURN_IF_FAIL (value->type == COGL_BOXED_FLOAT);
+      _COGL_RETURN_IF_FAIL (value->size == 4);
+      _COGL_RETURN_IF_FAIL (value->count == 1);
 
       GE( ctx, glProgramLocalParameter4fv (GL_FRAGMENT_PROGRAM_ARB, location,
                                            value->v.float_value) );
@@ -505,7 +403,7 @@ _cogl_program_flush_uniforms (CoglProgram *program,
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (ctx->driver != COGL_DRIVER_GLES1);
+  _COGL_RETURN_IF_FAIL (ctx->driver != COGL_DRIVER_GLES1);
 
   for (i = 0; i < program->custom_uniforms->len; i++)
     {
@@ -534,8 +432,9 @@ _cogl_program_flush_uniforms (CoglProgram *program,
               switch (_cogl_program_get_language (program))
                 {
                 case COGL_SHADER_LANGUAGE_GLSL:
-                  _cogl_program_flush_uniform_glsl (uniform->location,
-                                                    &uniform->value);
+                  _cogl_boxed_value_set_uniform (ctx,
+                                                 uniform->location,
+                                                 &uniform->value);
                   break;
 
                 case COGL_SHADER_LANGUAGE_ARBFP:

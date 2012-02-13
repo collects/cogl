@@ -74,7 +74,15 @@ cogl_wayland_display_set_compositor_display
 
 <SUBSECTION>
 cogl_context_new
+cogl_is_context
 cogl_context_get_display
+
+<SUBSECTION>
+CoglFeatureID
+cogl_has_feature
+cogl_has_features
+CoglFeatureCallback
+cogl_foreach_feature
 
 <SUBSECTION>
 cogl_push_matrix
@@ -160,12 +168,23 @@ COGL_UNPREMULT_MASK
 </SECTION>
 
 <SECTION>
+<FILE>cogl-poll</FILE>
+<TITLE>Main loop integeration</TITLE>
+CoglPollFDEvent
+CoglPollFD
+cogl_poll_get_info
+cogl_poll_dispatch
+cogl_glib_source_new
+</SECTION>
+
+<SECTION>
 <FILE>cogl-clipping</FILE>
 <TITLE>Clipping</TITLE>
 cogl_clip_push_rectangle
 cogl_clip_push_window_rectangle
 cogl_clip_push_from_path
 cogl_clip_push_from_path_preserve
+cogl_clip_push_primitive
 cogl_clip_pop
 </SECTION>
 
@@ -181,6 +200,10 @@ cogl_is_index_array
 <TITLE>Vertex Attributes</TITLE>
 cogl_attribute_new
 cogl_is_attribute
+cogl_attribute_set_normalized
+cogl_attribute_get_normalized
+cogl_attribute_get_buffer
+cogl_attribute_set_buffer
 </SECTION>
 
 <SECTION>
@@ -195,14 +218,15 @@ cogl_is_indices
 <TITLE>Primitives</TITLE>
 CoglPrimitive
 cogl_primitive_new
-cogl_primitive_new_with_attributes_array
-cogl_primitive_new_with_p3_attributes
-cogl_primitive_new_with_p2c4_attributes
-cogl_primitive_new_with_p3c4_attributes
-cogl_primitive_new_with_p2t2_attributes
-cogl_primitive_new_with_p3t2_attributes
-cogl_primitive_new_with_p2t2c4_attributes
-cogl_primitive_new_with_p3t2c4_attributes
+cogl_primitive_new_with_attributes
+cogl_primitive_new_p2
+cogl_primitive_new_p3
+cogl_primitive_new_p2c4
+cogl_primitive_new_p3c4
+cogl_primitive_new_p2t2
+cogl_primitive_new_p3t2
+cogl_primitive_new_p2t2c4
+cogl_primitive_new_p3t2c4
 cogl_is_primitive
 cogl_primitive_get_first_vertex
 cogl_primitive_set_first_vertex
@@ -211,8 +235,11 @@ cogl_primitive_set_n_vertices
 cogl_primitive_get_mode
 cogl_primitive_set_mode
 cogl_primitive_set_attributes
+cogl_primitive_get_indices
 cogl_primitive_set_indices
-cogl_primitive_draw
+cogl_primitive_copy
+CoglPrimitiveAttributeCallback
+cogl_primitive_foreach_attribute
 </SECTION>
 
 <SECTION>
@@ -223,6 +250,24 @@ cogl_rectangles
 cogl_rectangle_with_texture_coords
 cogl_rectangles_with_texture_coords
 cogl_rectangle_with_multitexture_coords
+</SECTION>
+
+<SECTION>
+<FILE>cogl-snippet</FILE>
+<TITLE>Shader snippets</TITLE>
+CoglSnippet
+CoglSnippetHook
+cogl_snippet_new
+cogl_snippet_get_hook
+cogl_is_snippet
+cogl_snippet_set_declarations
+cogl_snippet_get_declarations
+cogl_snippet_set_pre
+cogl_snippet_get_pre
+cogl_snippet_set_replace
+cogl_snippet_get_replace
+cogl_snippet_set_post
+cogl_snippet_get_post
 </SECTION>
 
 <SECTION>
@@ -261,35 +306,16 @@ cogl_path_stroke
 </SECTION>
 
 <SECTION>
-<FILE>cogl-drawing</FILE>
-<TITLE>Draw Vertex Attributes</TITLE>
-cogl_draw_vertex_attributes
-cogl_draw_vertex_attributes_array
-cogl_draw_indexed_vertex_attributes
-cogl_draw_indexed_vertex_attributes_array
-</SECTION>
-
-<SECTION>
 <FILE>cogl-texture</FILE>
 <TITLE>The Texture Interface</TITLE>
-CoglTextureVertex
-CoglTextureFlags
-cogl_texture_new_with_size
-cogl_texture_new_from_file
-cogl_texture_new_from_data
-cogl_texture_new_from_foreign
-cogl_texture_new_from_bitmap
-cogl_texture_new_from_sub_texture
+CoglTexture
 cogl_is_texture
 
 <SUBSECTION>
 cogl_texture_get_width
 cogl_texture_get_height
 cogl_texture_get_format
-cogl_texture_get_rowstride
-cogl_texture_get_max_waste
 cogl_texture_is_sliced
-cogl_texture_get_gl_texture
 cogl_texture_get_data
 cogl_texture_set_region
 
@@ -298,11 +324,64 @@ COGL_TEXTURE_MAX_WASTE
 </SECTION>
 
 <SECTION>
+<FILE>cogl-texture-2d</FILE>
+<TITLE>2D textures</TITLE>
+CoglTexture2D
+cogl_texture_2d_new_with_size
+cogl_texture_2d_new_from_data
+cogl_texture_2d_new_from_foreign
+cogl_is_texture_rectangle
+</SECTION>
+
+<SECTION>
+<FILE>cogl-texture-rectangle</FILE>
+<TITLE>Rectangle textures (non-normalized coordinates)</TITLE>
+CoglTextureRectangle
+cogl_texture_rectangle_new_with_size
+cogl_is_texture_rectangle
+</SECTION>
+
+<SECTION>
 <FILE>cogl-texture-3d</FILE>
 <TITLE>3D textures</TITLE>
+CoglTexture3D
 cogl_texture_3d_new_with_size
 cogl_texture_3d_new_from_data
 cogl_is_texture_3d
+</SECTION>
+
+<SECTION>
+<FILE>cogl-meta-texture</FILE>
+<TITLE>High Level Meta Textures</TITLE>
+CoglMetaTexture
+CoglMetaTextureCallback
+cogl_meta_texture_foreach_in_region
+</SECTION>
+
+<SECTION>
+<FILE>cogl-sub-texture</FILE>
+<TITLE>Sub Textures</TITLE>
+CoglSubTexture
+cogl_sub_texture_new
+cogl_is_sub_texture
+</SECTION>
+
+<SECTION>
+<FILE>cogl-texture-2d-sliced</FILE>
+<TITLE>Sliced Textures</TITLE>
+CoglTexture2DSliced
+cogl_texture_2d_sliced_new_with_size
+cogl_is_texture_2d_sliced
+</SECTION>
+
+<SECTION>
+<FILE>cogl-texture-pixmap-x11</FILE>
+<TITLE>X11 Texture From Pixmap</TITLE>
+cogl_texture_pixmap_x11_new
+cogl_texture_pixmap_x11_update_area
+cogl_texture_pixmap_x11_is_using_tfp_extension
+cogl_texture_pixmap_x11_set_damage_object
+cogl_is_texture_pixmap_x11
 </SECTION>
 
 <SECTION>
@@ -325,13 +404,23 @@ cogl_framebuffer_get_blue_bits
 cogl_framebuffer_get_blue_bits
 cogl_framebuffer_get_color_mask
 cogl_framebuffer_set_color_mask
+cogl_framebuffer_get_point_samples_per_pixel
+cogl_framebuffer_set_point_samples_per_pixel
 cogl_framebuffer_get_context
 cogl_framebuffer_clear
 cogl_framebuffer_clear4f
+
+<SUBSECTION>
+cogl_framebuffer_draw_primitive
+cogl_framebuffer_draw_attributes
+cogl_framebuffer_draw_indexed_attributes
+
+<SUBSECTION>
 cogl_framebuffer_swap_buffers
 cogl_framebuffer_swap_region
 cogl_framebuffer_add_swap_buffers_callback
 cogl_framebuffer_remove_swap_buffers_callback
+cogl_framebuffer_finish
 
 <SUBSECTION>
 cogl_get_draw_framebuffer
@@ -425,13 +514,14 @@ cogl_matrix_copy
 cogl_matrix_equal
 cogl_matrix_free
 cogl_matrix_frustum
-cogl_matrix_ortho
+cogl_matrix_orthographic
 cogl_matrix_perspective
 cogl_matrix_look_at
 cogl_matrix_multiply
 cogl_matrix_rotate
 cogl_matrix_translate
 cogl_matrix_scale
+cogl_matrix_transpose
 cogl_matrix_get_array
 cogl_matrix_get_inverse
 cogl_matrix_transform_point
@@ -516,6 +606,11 @@ cogl_pipeline_get_point_size
 cogl_pipeline_get_color_mask
 cogl_pipeline_set_color_mask
 
+CoglPipelineCullFaceMode
+cogl_pipeline_set_cull_face_mode
+CoglWinding
+cogl_pipeline_set_front_face_winding
+
 cogl_pipeline_set_layer_texture
 cogl_pipeline_get_layer_texture
 CoglMaterialFilter
@@ -537,6 +632,16 @@ cogl_pipeline_remove_layer
 
 cogl_pipeline_get_n_layers
 cogl_pipeline_foreach_layer
+
+cogl_pipeline_get_uniform_location
+cogl_pipeline_set_uniform_1f
+cogl_pipeline_set_uniform_1i
+cogl_pipeline_set_uniform_float
+cogl_pipeline_set_uniform_int
+cogl_pipeline_set_uniform_matrix
+
+cogl_pipeline_add_snippet
+cogl_pipeline_add_layer_snippet
 
 <SUBSECTION Private>
 cogl_blend_string_error_get_type

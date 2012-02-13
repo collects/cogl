@@ -74,7 +74,8 @@ typedef struct _CoglTexture CoglTexture;
 typedef enum {
   COGL_TEXTURE_ERROR_SIZE,
   COGL_TEXTURE_ERROR_FORMAT,
-  COGL_TEXTURE_ERROR_BAD_PARAMETER
+  COGL_TEXTURE_ERROR_BAD_PARAMETER,
+  COGL_TEXTURE_ERROR_TYPE
 } CoglTextureError;
 
 GQuark cogl_texture_error_quark (void);
@@ -260,9 +261,29 @@ cogl_texture_get_format (CoglTexture *texture);
  * cogl_texture_get_rowstride:
  * @texture a #CoglTexture pointer.
  *
- * Queries the rowstride of a cogl texture.
+ * Determines the bytes-per-pixel for the #CoglPixelFormat retrieved
+ * from cogl_texture_get_format() and multiplies that by the texture's
+ * width.
  *
- * Return value: the offset in bytes between each consequetive row of pixels
+ * <note>It's very unlikely that anyone would need to use this API to
+ * query the internal rowstride of a #CoglTexture which can just be
+ * considered an implementation detail. Actually it's not even useful
+ * internally since underlying drivers are free to use a different
+ * format</note>
+ *
+ * </note>This API is only here for backwards compatibility and
+ * shouldn't be used in new code. In particular please don't be
+ * mislead to pass the returned value to cogl_texture_get_data() for
+ * the rowstride, since you should be passing the rowstride you desire
+ * for your destination buffer not the rowstride of the source
+ * texture.</note>
+ *
+ * Return value: The bytes-per-pixel for the current format
+ *               multiplied by the texture's width
+ *
+ * Deprecated: 1.10: There's no replacement for the API but there's
+ *                   also no known need for API either. It was just
+ *                   a mistake that it was ever published.
  */
 unsigned int
 cogl_texture_get_rowstride (CoglTexture *texture);
@@ -317,15 +338,20 @@ cogl_texture_get_gl_texture (CoglTexture *texture,
  * cogl_texture_get_data:
  * @texture a #CoglTexture pointer.
  * @format: the #CoglPixelFormat to store the texture as.
- * @rowstride: the rowstride of @data or retrieved from texture if none is
- * specified.
- * @data: memory location to write contents of buffer, or %NULL if we're
- * only querying the data size through the return value.
+ * @rowstride: the rowstride of @data in bytes or pass 0 to calculate
+ *             from the bytes-per-pixel of @format multiplied by the
+ *             @texture width.
+ * @data: memory location to write the @texture's contents, or %NULL
+ * to only query the data size through the return value.
  *
  * Copies the pixel data from a cogl texture to system memory.
  *
- * Return value: the size of the texture data in bytes, or 0 if the texture
- *   is not valid
+ * <note>Don't pass the value of cogl_texture_get_rowstride() as the
+ * @rowstride argument, the rowstride should be the rowstride you
+ * want for the destination @data buffer not the rowstride of the
+ * source texture</note>
+ *
+ * Return value: the size of the texture data in bytes
  */
 int
 cogl_texture_get_data (CoglTexture *texture,
@@ -340,8 +366,10 @@ cogl_texture_get_data (CoglTexture *texture,
  * @src_y: upper left coordinate to use from source data.
  * @dst_x: upper left destination horizontal coordinate.
  * @dst_y: upper left destination vertical coordinate.
- * @dst_width: width of destination region to write.
- * @dst_height: height of destination region to write.
+ * @dst_width: width of destination region to write. (Must be less
+ *   than or equal to @width)
+ * @dst_height: height of destination region to write. (Must be less
+ *   than or equal to @height)
  * @width: width of source data buffer.
  * @height: height of source data buffer.
  * @format: the #CoglPixelFormat used in the source buffer.
@@ -349,8 +377,10 @@ cogl_texture_get_data (CoglTexture *texture,
  * specified)
  * @data: the actual pixel data.
  *
- * Sets the pixels in a rectangular subregion of @handle from an in-memory
+ * Sets the pixels in a rectangular subregion of @texture from an in-memory
  * buffer containing pixel data.
+ *
+ * <note>The region set can't be larger than the source @data</note>
  *
  * Return value: %TRUE if the subregion upload was successful, and
  *   %FALSE otherwise
@@ -380,12 +410,17 @@ cogl_texture_set_region (CoglTexture     *texture,
  * @src_y: upper left coordinate to use from the source bitmap
  * @dst_x: upper left destination horizontal coordinate.
  * @dst_y: upper left destination vertical coordinate.
- * @dst_width: width of destination region to write.
- * @dst_height: height of destination region to write.
+ * @dst_width: width of destination region to write. (Must be less
+ *   than or equal to the bitmap width)
+ * @dst_height: height of destination region to write. (Must be less
+ *   than or equal to the bitmap height)
  * @bitmap: The source bitmap to read from
  *
  * Copies a specified source region from @bitmap to the position
  * (@src_x, @src_y) of the given destination texture @handle.
+ *
+ * <note>The region updated can't be larger than the source
+ * bitmap</note>
  *
  * Return value: %TRUE if the subregion upload was successful, and
  *   %FALSE otherwise

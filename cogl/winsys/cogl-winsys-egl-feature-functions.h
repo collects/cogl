@@ -75,7 +75,7 @@ COGL_WINSYS_FEATURE_BEGIN (image_pixmap,
                            "image_pixmap\0",
                            COGL_EGL_WINSYS_FEATURE_EGL_IMAGE_FROM_X11_PIXMAP)
 COGL_WINSYS_FEATURE_END ()
-#ifdef COGL_HAS_EGL_PLATFORM_WAYLAND_SUPPORT
+#ifdef EGL_WL_bind_wayland_display
 COGL_WINSYS_FEATURE_BEGIN (bind_wayland_display,
                            "WL\0",
                            "bind_wayland_display\0",
@@ -88,3 +88,18 @@ COGL_WINSYS_FEATURE_FUNCTION (EGLBoolean, eglUnbindWaylandDisplay,
                                struct wl_display *wayland_display))
 COGL_WINSYS_FEATURE_END ()
 #endif
+COGL_WINSYS_FEATURE_BEGIN (surfaceless_opengl,
+                           "KHR\0",
+                           "surfaceless_opengl\0",
+                           COGL_EGL_WINSYS_FEATURE_SURFACELESS_OPENGL)
+COGL_WINSYS_FEATURE_END ()
+COGL_WINSYS_FEATURE_BEGIN (surfaceless_gles1,
+                           "KHR\0",
+                           "surfaceless_gles1\0",
+                           COGL_EGL_WINSYS_FEATURE_SURFACELESS_GLES1)
+COGL_WINSYS_FEATURE_END ()
+COGL_WINSYS_FEATURE_BEGIN (surfaceless_gles2,
+                           "KHR\0",
+                           "surfaceless_gles2\0",
+                           COGL_EGL_WINSYS_FEATURE_SURFACELESS_GLES2)
+COGL_WINSYS_FEATURE_END ()

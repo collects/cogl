@@ -32,6 +32,7 @@
 #include "cogl-object-private.h"
 #include "cogl-indices.h"
 #include "cogl-indices-private.h"
+#include "cogl-context-private.h"
 
 static void _cogl_index_buffer_free (CoglIndexBuffer *indices);
 
@@ -41,18 +42,19 @@ COGL_BUFFER_DEFINE (IndexBuffer, index_buffer);
  * indices buffer should be able to contain multiple ranges of indices
  * which the wiki design doesn't currently consider. */
 CoglIndexBuffer *
-cogl_index_buffer_new (gsize bytes)
+cogl_index_buffer_new (CoglContext *context, gsize bytes)
 {
   CoglIndexBuffer *indices = g_slice_new (CoglIndexBuffer);
   gboolean use_malloc;
 
-  if (!cogl_features_available (COGL_FEATURE_VBOS))
+  if (!(context->private_feature_flags & COGL_PRIVATE_FEATURE_VBOS))
     use_malloc = TRUE;
   else
     use_malloc = FALSE;
 
   /* parent's constructor */
   _cogl_buffer_initialize (COGL_BUFFER (indices),
+                           context,
                            bytes,
                            use_malloc,
                            COGL_BUFFER_BIND_TARGET_INDEX_BUFFER,

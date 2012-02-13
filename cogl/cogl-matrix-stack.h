@@ -30,8 +30,17 @@
 #define __COGL_MATRIX_STACK_H
 
 #include "cogl-matrix.h"
+#include "cogl-context.h"
 
 typedef struct _CoglMatrixStack CoglMatrixStack;
+
+typedef struct
+{
+  CoglMatrixStack *stack;
+  unsigned int age;
+  gboolean flushed_identity;
+  gboolean flipped;
+} CoglMatrixStackCache;
 
 typedef enum {
   COGL_MATRIX_MODELVIEW,
@@ -39,7 +48,8 @@ typedef enum {
   COGL_MATRIX_TEXTURE
 } CoglMatrixMode;
 
-typedef void (* CoglMatrixStackFlushFunc) (gboolean is_identity,
+typedef void (* CoglMatrixStackFlushFunc) (CoglContext *context,
+                                           gboolean is_identity,
                                            const CoglMatrix *matrix,
                                            void *user_data);
 
@@ -105,11 +115,12 @@ _cogl_matrix_stack_get (CoglMatrixStack *stack,
 void
 _cogl_matrix_stack_set (CoglMatrixStack *stack,
                         const CoglMatrix *matrix);
+
 void
-_cogl_matrix_stack_flush_to_gl (CoglMatrixStack *stack,
-                                CoglMatrixMode mode);
-void
-_cogl_matrix_stack_dirty (CoglMatrixStack  *stack);
+_cogl_matrix_stack_flush_to_gl_builtins (CoglContext *ctx,
+                                         CoglMatrixStack *stack,
+                                         CoglMatrixMode mode,
+                                         gboolean disable_flip);
 
 unsigned int
 _cogl_matrix_stack_get_age (CoglMatrixStack *stack);
@@ -121,10 +132,19 @@ _cogl_matrix_stack_get_age (CoglMatrixStack *stack);
 gboolean
 _cogl_matrix_stack_has_identity_flag (CoglMatrixStack *stack);
 
+gboolean
+_cogl_matrix_stack_equal (CoglMatrixStack *stack0,
+                          CoglMatrixStack *stack1);
+
 void
-_cogl_matrix_stack_prepare_for_flush (CoglMatrixStack *stack,
-                                      CoglMatrixMode mode,
-                                      CoglMatrixStackFlushFunc callback,
-                                      void *user_data);
+_cogl_matrix_stack_init_cache (CoglMatrixStackCache *cache);
+
+gboolean
+_cogl_matrix_stack_check_and_update_cache (CoglMatrixStack *stack,
+                                           CoglMatrixStackCache *cache,
+                                           gboolean flip);
+
+void
+_cogl_matrix_stack_destroy_cache (CoglMatrixStackCache *cache);
 
 #endif /* __COGL_MATRIX_STACK_H */

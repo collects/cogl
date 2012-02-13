@@ -193,7 +193,6 @@ cogl_matrix_scale (CoglMatrix *matrix,
 		   float sy,
 		   float sz);
 
-#define cogl_matrix_look_at cogl_matrix_look_at_EXP
 /**
  * cogl_matrix_look_at:
  * @matrix: A 4x4 transformation matrix
@@ -252,12 +251,16 @@ cogl_matrix_look_at (CoglMatrix *matrix,
 /**
  * cogl_matrix_frustum:
  * @matrix: A 4x4 transformation matrix
- * @left: coord of left vertical clipping plane
- * @right: coord of right vertical clipping plane
- * @bottom: coord of bottom horizontal clipping plane
- * @top: coord of top horizontal clipping plane
- * @z_near: positive distance to near depth clipping plane
- * @z_far: positive distance to far depth clipping plane
+ * @left: X position of the left clipping plane where it
+ *   intersects the near clipping plane
+ * @right: X position of the right clipping plane where it
+ *   intersects the near clipping plane
+ * @bottom: Y position of the bottom clipping plane where it
+ *   intersects the near clipping plane
+ * @top: Y position of the top clipping plane where it intersects
+ *   the near clipping plane
+ * @z_near: The distance to the near clipping plane (Must be positive)
+ * @z_far: The distance to the far clipping plane (Must be positive)
  *
  * Multiplies @matrix by the given frustum perspective matrix.
  */
@@ -273,19 +276,18 @@ cogl_matrix_frustum (CoglMatrix *matrix,
 /**
  * cogl_matrix_perspective:
  * @matrix: A 4x4 transformation matrix
- * @fov_y: A field of view angle for the Y axis
- * @aspect: The ratio of width to height determining the field of view angle
- *   for the x axis.
- * @z_near: The distance to the near clip plane. Never pass 0 and always pass
- *   a positive number.
- * @z_far: The distance to the far clip plane. (Should always be positive)
+ * @fovy: Vertical field of view angle in degrees.
+ * @aspect: The (width over height) aspect ratio for display
+ * @z_near: The distance to the near clipping plane (Must be positive,
+ *   and must not be 0)
+ * @z_far: The distance to the far clipping plane (Must be positive)
  *
  * Multiplies @matrix by the described perspective matrix
  *
- * <note>You should be careful not to have to great a @z_far / @z_near ratio
- * since that will reduce the effectiveness of depth testing since there wont
- * be enough precision to identify the depth of objects near to each
- * other.</note>
+ * <note>You should be careful not to have to great a @z_far / @z_near
+ * ratio since that will reduce the effectiveness of depth testing
+ * since there wont be enough precision to identify the depth of
+ * objects near to each other.</note>
  */
 void
 cogl_matrix_perspective (CoglMatrix *matrix,
@@ -294,6 +296,36 @@ cogl_matrix_perspective (CoglMatrix *matrix,
                          float       z_near,
                          float       z_far);
 
+#ifdef COGL_ENABLE_EXPERIMENTAL_API
+/**
+ * cogl_matrix_orthographic:
+ * @matrix: A 4x4 transformation matrix
+ * @x_1: The x coordinate for the first vertical clipping plane
+ * @y_1: The y coordinate for the first horizontal clipping plane
+ * @x_2: The x coordinate for the second vertical clipping plane
+ * @y_2: The y coordinate for the second horizontal clipping plane
+ * @near: The <emphasis>distance</emphasis> to the near clipping
+ *   plane (will be <emphasis>negative</emphasis> if the plane is
+ *   behind the viewer)
+ * @far: The <emphasis>distance</emphasis> to the far clipping
+ *   plane (will be <emphasis>negative</emphasis> if the plane is
+ *   behind the viewer)
+ *
+ * Multiplies @matrix by a parallel projection matrix.
+ *
+ * Since: 1.10
+ * Stability: unstable
+ */
+void
+cogl_matrix_orthographic (CoglMatrix *matrix,
+                          float x_1,
+                          float y_1,
+                          float x_2,
+                          float y_2,
+                          float near,
+                          float far);
+#endif
+
 /**
  * cogl_matrix_ortho:
  * @matrix: A 4x4 transformation matrix
@@ -301,12 +333,16 @@ cogl_matrix_perspective (CoglMatrix *matrix,
  * @right: The coordinate for the right clipping plane
  * @bottom: The coordinate for the bottom clipping plane
  * @top: The coordinate for the top clipping plane
- * @z_near: The coordinate for the near clipping plane (may be negative if
- *   the plane is behind the viewer)
- * @z_far: The coordinate for the far clipping plane (may be negative if
- *   the plane is behind the viewer)
+ * @near: The <emphasis>distance</emphasis> to the near clipping
+ *   plane (will be <emphasis>negative</emphasis> if the plane is
+ *   behind the viewer)
+ * @far: The <emphasis>distance</emphasis> to the far clipping
+ *   plane (will be <emphasis>negative</emphasis> if the plane is
+ *   behind the viewer)
  *
  * Multiplies @matrix by a parallel projection matrix.
+ *
+ * Deprecated: 1.10: Use cogl_matrix_orthographic()
  */
 void
 cogl_matrix_ortho (CoglMatrix *matrix,
@@ -314,14 +350,10 @@ cogl_matrix_ortho (CoglMatrix *matrix,
                    float       right,
                    float       bottom,
                    float       top,
-                   float       z_near,
-                   float       z_far);
+                   float       near,
+                   float       far);
 
 #ifdef COGL_ENABLE_EXPERIMENTAL_API
-#define cogl_matrix_view_2d_in_frustum cogl_matrix_view_2d_in_frustum_EXP
-#define cogl_matrix_view_2d_in_perspective \
-  cogl_matrix_view_2d_in_perspective_EXP
-
 /**
  * cogl_matrix_view_2d_in_frustum:
  * @matrix: A 4x4 transformation matrix
@@ -348,6 +380,9 @@ cogl_matrix_ortho (CoglMatrix *matrix,
  * Toolkits such as Clutter that mix 2D and 3D drawing can use this to
  * create a 2D coordinate system within a 3D perspective projected
  * view frustum.
+ *
+ * Since: 1.8
+ * Stability: unstable
  */
 void
 cogl_matrix_view_2d_in_frustum (CoglMatrix *matrix,
@@ -384,7 +419,9 @@ cogl_matrix_view_2d_in_frustum (CoglMatrix *matrix,
  * Toolkits such as Clutter that mix 2D and 3D drawing can use this to
  * create a 2D coordinate system within a 3D perspective projected
  * view frustum.
-
+ *
+ * Since: 1.8
+ * Stability: unstable
  */
 void
 cogl_matrix_view_2d_in_perspective (CoglMatrix *matrix,
@@ -523,9 +560,6 @@ cogl_matrix_transform_point (const CoglMatrix *matrix,
                              float *w);
 
 #ifdef COGL_ENABLE_EXPERIMENTAL_API
-#define cogl_matrix_transform_points cogl_matrix_transform_points_EXP
-#define cogl_matrix_project_points cogl_matrix_project_points_EXP
-
 /**
  * cogl_matrix_transform_points:
  * @matrix: A transformation matrix
@@ -573,7 +607,7 @@ cogl_matrix_transform_point (const CoglMatrix *matrix,
  *                               N_VERTICES);
  * ]|
  *
- * Stability: Unstable
+ * Stability: unstable
  */
 void
 cogl_matrix_transform_points (const CoglMatrix *matrix,
@@ -628,7 +662,7 @@ cogl_matrix_transform_points (const CoglMatrix *matrix,
  *                             N_VERTICES);
  * ]|
  *
- * Stability: Unstable
+ * Stability: unstable
  */
 void
 cogl_matrix_project_points (const CoglMatrix *matrix,
@@ -652,6 +686,18 @@ cogl_matrix_project_points (const CoglMatrix *matrix,
  */
 gboolean
 cogl_matrix_is_identity (const CoglMatrix *matrix);
+
+/**
+ * cogl_matrix_transpose:
+ * @matrix: A #CoglMatrix
+ *
+ * Replaces @matrix with its transpose. Ie, every element (i,j) in the
+ * new matrix is taken from element (j,i) in the old matrix.
+ *
+ * Since: 1.10
+ */
+void
+cogl_matrix_transpose (CoglMatrix *matrix);
 
 #ifdef _COGL_SUPPORTS_GTYPE_INTEGRATION
 

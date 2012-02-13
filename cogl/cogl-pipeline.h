@@ -29,6 +29,7 @@
 #define __COGL_PIPELINE_H__
 
 #include <cogl/cogl-types.h>
+#include <cogl/cogl-snippet.h>
 
 G_BEGIN_DECLS
 
@@ -51,7 +52,6 @@ typedef struct _CoglPipeline	      CoglPipeline;
 
 #define COGL_PIPELINE(OBJECT) ((CoglPipeline *)OBJECT)
 
-#define cogl_pipeline_new cogl_pipeline_new_EXP
 /**
  * cogl_pipeline_new:
  *
@@ -66,7 +66,6 @@ typedef struct _CoglPipeline	      CoglPipeline;
 CoglPipeline *
 cogl_pipeline_new (void);
 
-#define cogl_pipeline_copy cogl_pipeline_copy_EXP
 /**
  * cogl_pipeline_copy:
  * @source: a #CoglPipeline object to copy
@@ -88,7 +87,6 @@ cogl_pipeline_new (void);
 CoglPipeline *
 cogl_pipeline_copy (CoglPipeline *source);
 
-#define cogl_is_pipeline cogl_is_pipeline_EXP
 /**
  * cogl_is_pipeline:
  * @handle: A CoglHandle
@@ -120,7 +118,6 @@ typedef gboolean (*CoglPipelineLayerCallback) (CoglPipeline *pipeline,
                                                int layer_index,
                                                void *user_data);
 
-#define cogl_pipeline_foreach_layer cogl_pipeline_foreach_layer_EXP
 /**
  * cogl_pipeline_foreach_layer:
  * @pipeline: A #CoglPipeline object
@@ -137,6 +134,31 @@ void
 cogl_pipeline_foreach_layer (CoglPipeline *pipeline,
                              CoglPipelineLayerCallback callback,
                              void *user_data);
+
+/**
+ * cogl_pipeline_get_uniform_location:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_name: The name of a uniform
+ *
+ * This is used to get an integer representing the uniform with the
+ * name @uniform_name. The integer can be passed to functions such as
+ * cogl_pipeline_set_uniform_1f() to set the value of a uniform.
+ *
+ * This function will always return a valid integer. Ie, unlike
+ * OpenGL, it does not return -1 if the uniform is not available in
+ * this pipeline so it can not be used to test whether uniforms are
+ * present. It is not necessary to set the program on the pipeline
+ * before calling this function.
+ *
+ * Return value: A integer representing the location of the given uniform.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+int
+cogl_pipeline_get_uniform_location (CoglPipeline *pipeline,
+                                    const char *uniform_name);
+
 
 #endif /* COGL_ENABLE_EXPERIMENTAL_API */
 

@@ -29,7 +29,8 @@
 #include "config.h"
 #endif
 
-#include <cogl.h>
+#include <cogl-xlib.h>
+
 #include <cogl-internal.h>
 #include <cogl-handle.h>
 #include <cogl-context-private.h>
@@ -101,6 +102,7 @@ _cogl_xlib_get_damage_base (void)
   CoglX11Renderer *x11_renderer;
   _COGL_GET_CONTEXT (ctxt, -1);
 
-  x11_renderer = ctxt->display->renderer->winsys;
+  x11_renderer =
+    (CoglX11Renderer *) _cogl_xlib_renderer_get_data (ctxt->display->renderer);
   return x11_renderer->damage_base;
 }

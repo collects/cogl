@@ -36,7 +36,6 @@ G_BEGIN_DECLS
 
 #ifdef COGL_ENABLE_EXPERIMENTAL_API
 
-#define cogl_pipeline_set_color cogl_pipeline_set_color_EXP
 /**
  * cogl_pipeline_set_color:
  * @pipeline: A #CoglPipeline object
@@ -58,7 +57,6 @@ void
 cogl_pipeline_set_color (CoglPipeline    *pipeline,
                          const CoglColor *color);
 
-#define cogl_pipeline_set_color4ub cogl_pipeline_set_color4ub_EXP
 /**
  * cogl_pipeline_set_color4ub:
  * @pipeline: A #CoglPipeline object
@@ -81,7 +79,6 @@ cogl_pipeline_set_color4ub (CoglPipeline *pipeline,
                             guint8        blue,
                             guint8        alpha);
 
-#define cogl_pipeline_set_color4f cogl_pipeline_set_color4f_EXP
 /**
  * cogl_pipeline_set_color4f:
  * @pipeline: A #CoglPipeline object
@@ -104,7 +101,6 @@ cogl_pipeline_set_color4f (CoglPipeline *pipeline,
                            float         blue,
                            float         alpha);
 
-#define cogl_pipeline_get_color cogl_pipeline_get_color_EXP
 /**
  * cogl_pipeline_get_color:
  * @pipeline: A #CoglPipeline object
@@ -119,7 +115,6 @@ void
 cogl_pipeline_get_color (CoglPipeline *pipeline,
                          CoglColor    *color);
 
-#define cogl_pipeline_set_ambient cogl_pipeline_set_ambient_EXP
 /**
  * cogl_pipeline_set_ambient:
  * @pipeline: A #CoglPipeline object
@@ -141,7 +136,6 @@ void
 cogl_pipeline_set_ambient (CoglPipeline    *pipeline,
 			   const CoglColor *ambient);
 
-#define cogl_pipeline_get_ambient cogl_pipeline_get_ambient_EXP
 /**
  * cogl_pipeline_get_ambient:
  * @pipeline: A #CoglPipeline object
@@ -156,7 +150,6 @@ void
 cogl_pipeline_get_ambient (CoglPipeline *pipeline,
                            CoglColor    *ambient);
 
-#define cogl_pipeline_set_diffuse cogl_pipeline_set_diffuse_EXP
 /**
  * cogl_pipeline_set_diffuse:
  * @pipeline: A #CoglPipeline object
@@ -175,7 +168,6 @@ void
 cogl_pipeline_set_diffuse (CoglPipeline    *pipeline,
 			   const CoglColor *diffuse);
 
-#define cogl_pipeline_get_diffuse cogl_pipeline_get_diffuse_EXP
 /**
  * cogl_pipeline_get_diffuse:
  * @pipeline: A #CoglPipeline object
@@ -190,8 +182,6 @@ void
 cogl_pipeline_get_diffuse (CoglPipeline *pipeline,
                            CoglColor    *diffuse);
 
-#define cogl_pipeline_set_ambient_and_diffuse \
-  cogl_pipeline_set_ambient_and_diffuse_EXP
 /**
  * cogl_pipeline_set_ambient_and_diffuse:
  * @pipeline: A #CoglPipeline object
@@ -211,7 +201,6 @@ void
 cogl_pipeline_set_ambient_and_diffuse (CoglPipeline    *pipeline,
 				       const CoglColor *color);
 
-#define cogl_pipeline_set_specular cogl_pipeline_set_specular_EXP
 /**
  * cogl_pipeline_set_specular:
  * @pipeline: A #CoglPipeline object
@@ -230,7 +219,6 @@ void
 cogl_pipeline_set_specular (CoglPipeline    *pipeline,
 			    const CoglColor *specular);
 
-#define cogl_pipeline_get_specular cogl_pipeline_get_specular_EXP
 /**
  * cogl_pipeline_get_specular:
  * @pipeline: A #CoglPipeline object
@@ -245,7 +233,6 @@ void
 cogl_pipeline_get_specular (CoglPipeline *pipeline,
                             CoglColor    *specular);
 
-#define cogl_pipeline_set_shininess cogl_pipeline_set_shininess_EXP
 /**
  * cogl_pipeline_set_shininess:
  * @pipeline: A #CoglPipeline object
@@ -265,7 +252,6 @@ void
 cogl_pipeline_set_shininess (CoglPipeline *pipeline,
 			     float         shininess);
 
-#define cogl_pipeline_get_shininess cogl_pipeline_get_shininess_EXP
 /**
  * cogl_pipeline_get_shininess:
  * @pipeline: A #CoglPipeline object
@@ -280,7 +266,6 @@ cogl_pipeline_set_shininess (CoglPipeline *pipeline,
 float
 cogl_pipeline_get_shininess (CoglPipeline *pipeline);
 
-#define cogl_pipeline_set_emission cogl_pipeline_set_emission_EXP
 /**
  * cogl_pipeline_set_emission:
  * @pipeline: A #CoglPipeline object
@@ -299,7 +284,6 @@ void
 cogl_pipeline_set_emission (CoglPipeline    *pipeline,
 			    const CoglColor *emission);
 
-#define cogl_pipeline_get_emission cogl_pipeline_get_emission_EXP
 /**
  * cogl_pipeline_get_emission:
  * @pipeline: A #CoglPipeline object
@@ -348,8 +332,6 @@ typedef enum {
 } CoglPipelineAlphaFunc;
 /* NB: these values come from the equivalents in gl.h */
 
-#define cogl_pipeline_set_alpha_test_function \
-  cogl_pipeline_set_alpha_test_function_EXP
 /**
  * cogl_pipeline_set_alpha_test_function:
  * @pipeline: A #CoglPipeline object
@@ -373,8 +355,6 @@ cogl_pipeline_set_alpha_test_function (CoglPipeline         *pipeline,
 				       CoglPipelineAlphaFunc alpha_func,
 				       float                 alpha_reference);
 
-#define cogl_pipeline_get_alpha_test_function \
-  cogl_pipeline_get_alpha_test_function_EXP
 /**
  * cogl_pipeline_get_alpha_test_function:
  * @pipeline: A #CoglPipeline object
@@ -387,8 +367,6 @@ cogl_pipeline_set_alpha_test_function (CoglPipeline         *pipeline,
 CoglPipelineAlphaFunc
 cogl_pipeline_get_alpha_test_function (CoglPipeline *pipeline);
 
-#define cogl_pipeline_get_alpha_test_reference \
-  cogl_pipeline_get_alpha_test_reference_EXP
 /**
  * cogl_pipeline_get_alpha_test_reference:
  * @pipeline: A #CoglPipeline object
@@ -401,7 +379,6 @@ cogl_pipeline_get_alpha_test_function (CoglPipeline *pipeline);
 float
 cogl_pipeline_get_alpha_test_reference (CoglPipeline *pipeline);
 
-#define cogl_pipeline_set_blend cogl_pipeline_set_blend_EXP
 /**
  * cogl_pipeline_set_blend:
  * @pipeline: A #CoglPipeline object
@@ -489,7 +466,6 @@ cogl_pipeline_set_blend (CoglPipeline *pipeline,
                          const char   *blend_string,
                          GError      **error);
 
-#define cogl_pipeline_set_blend_constant cogl_pipeline_set_blend_constant_EXP
 /**
  * cogl_pipeline_set_blend_constant:
  * @pipeline: A #CoglPipeline object
@@ -505,7 +481,6 @@ void
 cogl_pipeline_set_blend_constant (CoglPipeline *pipeline,
                                   const CoglColor *constant_color);
 
-#define cogl_pipeline_set_point_size cogl_pipeline_set_point_size_EXP
 /**
  * cogl_pipeline_set_point_size:
  * @pipeline: a #CoglPipeline pointer
@@ -526,7 +501,6 @@ void
 cogl_pipeline_set_point_size (CoglPipeline *pipeline,
                               float point_size);
 
-#define cogl_pipeline_get_point_size cogl_pipeline_get_point_size_EXP
 /**
  * cogl_pipeline_get_point_size:
  * @pipeline: a #CoglPipeline pointer
@@ -542,7 +516,6 @@ cogl_pipeline_set_point_size (CoglPipeline *pipeline,
 float
 cogl_pipeline_get_point_size (CoglPipeline *pipeline);
 
-#define cogl_pipeline_get_color_mask cogl_pipeline_get_color_mask_EXP
 /**
  * cogl_pipeline_get_color_mask:
  * @pipeline: a #CoglPipeline object.
@@ -558,7 +531,6 @@ cogl_pipeline_get_point_size (CoglPipeline *pipeline);
 CoglColorMask
 cogl_pipeline_get_color_mask (CoglPipeline *pipeline);
 
-#define cogl_pipeline_set_color_mask cogl_pipeline_set_color_mask_EXP
 /**
  * cogl_pipeline_set_color_mask:
  * @pipeline: a #CoglPipeline object.
@@ -576,7 +548,6 @@ void
 cogl_pipeline_set_color_mask (CoglPipeline *pipeline,
                               CoglColorMask color_mask);
 
-#define cogl_pipeline_get_user_program cogl_pipeline_get_user_program_EXP
 /**
  * cogl_pipeline_get_user_program:
  * @pipeline: a #CoglPipeline object.
@@ -592,7 +563,6 @@ cogl_pipeline_set_color_mask (CoglPipeline *pipeline,
 CoglHandle
 cogl_pipeline_get_user_program (CoglPipeline *pipeline);
 
-#define cogl_pipeline_set_user_program cogl_pipeline_set_user_program_EXP
 /**
  * cogl_pipeline_set_user_program:
  * @pipeline: a #CoglPipeline object.
@@ -644,7 +614,6 @@ void
 cogl_pipeline_set_user_program (CoglPipeline *pipeline,
                                 CoglHandle program);
 
-#define cogl_pipeline_set_depth_state cogl_pipeline_set_depth_state_EXP
 /**
  * cogl_pipeline_set_depth_state:
  * @pipeline: A #CoglPipeline object
@@ -670,7 +639,6 @@ cogl_pipeline_set_depth_state (CoglPipeline *pipeline,
                                const CoglDepthState *state,
                                GError **error);
 
-#define cogl_pipeline_get_depth_state cogl_pipeline_get_depth_state_EXP
 /**
  * cogl_pipeline_get_depth_state
  * @pipeline: A #CoglPipeline object
@@ -685,6 +653,264 @@ cogl_pipeline_set_depth_state (CoglPipeline *pipeline,
 void
 cogl_pipeline_get_depth_state (CoglPipeline *pipeline,
                                CoglDepthState *state_out);
+
+/**
+ * CoglPipelineCullFaceMode:
+ * @COGL_PIPELINE_CULL_FACE_MODE_NONE: Neither face will be
+ *  culled. This is the default.
+ * @COGL_PIPELINE_CULL_FACE_MODE_FRONT: Front faces will be culled.
+ * @COGL_PIPELINE_CULL_FACE_MODE_BACK: Back faces will be culled.
+ * @COGL_PIPELINE_CULL_FACE_MODE_BOTH: All faces will be culled.
+ *
+ * Specifies which faces should be culled. This can be set on a
+ * pipeline using cogl_pipeline_set_cull_face_mode().
+ */
+typedef enum
+{
+  COGL_PIPELINE_CULL_FACE_MODE_NONE,
+  COGL_PIPELINE_CULL_FACE_MODE_FRONT,
+  COGL_PIPELINE_CULL_FACE_MODE_BACK,
+  COGL_PIPELINE_CULL_FACE_MODE_BOTH
+} CoglPipelineCullFaceMode;
+
+/**
+ * cogl_pipeline_set_cull_face_mode:
+ * @pipeline: A #CoglPipeline
+ * @cull_face_mode: The new mode to set
+ *
+ * Sets which faces will be culled when drawing. Face culling can be
+ * used to increase efficiency by avoiding drawing faces that would
+ * get overridden. For example, if a model has gaps so that it is
+ * impossible to see the inside then faces which are facing away from
+ * the screen will never be seen so there is no point in drawing
+ * them. This can be acheived by setting the cull face mode to
+ * %COGL_PIPELINE_CULL_FACE_MODE_BACK.
+ *
+ * Face culling relies on the primitives being drawn with a specific
+ * order to represent which faces are facing inside and outside the
+ * model. This order can be specified by calling
+ * cogl_pipeline_set_front_face_winding().
+ *
+ * Status: Unstable
+ * Since: 2.0
+ */
+void
+cogl_pipeline_set_cull_face_mode (CoglPipeline *pipeline,
+                                  CoglPipelineCullFaceMode cull_face_mode);
+
+/**
+ * cogl_pipeline_get_cull_face_mode:
+ *
+ * Return value: the cull face mode that was previously set with
+ * cogl_pipeline_set_cull_face_mode().
+ *
+ * Status: Unstable
+ * Since: 2.0
+ */
+CoglPipelineCullFaceMode
+cogl_pipeline_get_cull_face_mode (CoglPipeline *pipeline);
+
+/**
+ * cogl_pipeline_set_front_face_winding:
+ *
+ * The order of the vertices within a primitive specifies whether it
+ * is considered to be front or back facing. This function specifies
+ * which order is considered to be the front
+ * faces. %COGL_WINDING_COUNTER_CLOCKWISE sets the front faces to
+ * primitives with vertices in a counter-clockwise order and
+ * %COGL_WINDING_CLOCKWISE sets them to be clockwise. The default is
+ * %COGL_WINDING_COUNTER_CLOCKWISE.
+ *
+ * Status: Unstable
+ * Since: 2.0
+ */
+void
+cogl_pipeline_set_front_face_winding (CoglPipeline *pipeline,
+                                      CoglWinding front_winding);
+
+/**
+ * cogl_pipeline_set_front_face_winding:
+ *
+ * The order of the vertices within a primitive specifies whether it
+ * is considered to be front or back facing. This function specifies
+ * which order is considered to be the front
+ * faces. %COGL_WINDING_COUNTER_CLOCKWISE sets the front faces to
+ * primitives with vertices in a counter-clockwise order and
+ * %COGL_WINDING_CLOCKWISE sets them to be clockwise. The default is
+ * %COGL_WINDING_COUNTER_CLOCKWISE.
+ *
+ * Status: Unstable
+ * Since: 2.0
+ */
+CoglWinding
+cogl_pipeline_get_front_face_winding (CoglPipeline *pipeline);
+
+/**
+ * cogl_pipeline_set_uniform_1f:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_location: The uniform's location identifier
+ * @value: The new value for the uniform
+ *
+ * Sets a new value for the uniform at @uniform_location. If this
+ * pipeline has a user program attached and is later used as a source
+ * for drawing, the given value will be assigned to the uniform which
+ * can be accessed from the shader's source. The value for
+ * @uniform_location should be retrieved from the string name of the
+ * uniform by calling cogl_pipeline_get_uniform_location().
+ *
+ * This function should be used to set uniforms that are of type
+ * float. It can also be used to set a single member of a float array
+ * uniform.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_set_uniform_1f (CoglPipeline *pipeline,
+                              int uniform_location,
+                              float value);
+
+/**
+ * cogl_pipeline_set_uniform_1i:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_location: The uniform's location identifier
+ * @value: The new value for the uniform
+ *
+ * Sets a new value for the uniform at @uniform_location. If this
+ * pipeline has a user program attached and is later used as a source
+ * for drawing, the given value will be assigned to the uniform which
+ * can be accessed from the shader's source. The value for
+ * @uniform_location should be retrieved from the string name of the
+ * uniform by calling cogl_pipeline_get_uniform_location().
+ *
+ * This function should be used to set uniforms that are of type
+ * int. It can also be used to set a single member of a int array
+ * uniform or a sampler uniform.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_set_uniform_1i (CoglPipeline *pipeline,
+                              int uniform_location,
+                              int value);
+
+/**
+ * cogl_pipeline_set_uniform_float:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_location: The uniform's location identifier
+ * @n_components: The number of components in the corresponding uniform's type
+ * @count: The number of values to set
+ * @value: Pointer to the new values to set
+ *
+ * Sets new values for the uniform at @uniform_location. If this
+ * pipeline has a user program attached and is later used as a source
+ * for drawing, the given values will be assigned to the uniform which
+ * can be accessed from the shader's source. The value for
+ * @uniform_location should be retrieved from the string name of the
+ * uniform by calling cogl_pipeline_get_uniform_location().
+ *
+ * This function can be used to set any floating point type uniform,
+ * including float arrays and float vectors. For example, to set a
+ * single vec4 uniform you would use 4 for @n_components and 1 for
+ * @count. To set an array of 8 float values, you could use 1 for
+ * @n_components and 8 for @count.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_set_uniform_float (CoglPipeline *pipeline,
+                                 int uniform_location,
+                                 int n_components,
+                                 int count,
+                                 const float *value);
+
+/**
+ * cogl_pipeline_set_uniform_int:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_location: The uniform's location identifier
+ * @n_components: The number of components in the corresponding uniform's type
+ * @count: The number of values to set
+ * @value: Pointer to the new values to set
+ *
+ * Sets new values for the uniform at @uniform_location. If this
+ * pipeline has a user program attached and is later used as a source
+ * for drawing, the given values will be assigned to the uniform which
+ * can be accessed from the shader's source. The value for
+ * @uniform_location should be retrieved from the string name of the
+ * uniform by calling cogl_pipeline_get_uniform_location().
+ *
+ * This function can be used to set any integer type uniform,
+ * including int arrays and int vectors. For example, to set a single
+ * ivec4 uniform you would use 4 for @n_components and 1 for
+ * @count. To set an array of 8 int values, you could use 1 for
+ * @n_components and 8 for @count.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_set_uniform_int (CoglPipeline *pipeline,
+                               int uniform_location,
+                               int n_components,
+                               int count,
+                               const int *value);
+
+/**
+ * cogl_pipeline_set_uniform_matrix:
+ * @pipeline: A #CoglPipeline object
+ * @uniform_location: The uniform's location identifier
+ * @dimensions: The size of the matrix
+ * @count: The number of values to set
+ * @transpose: Whether to transpose the matrix
+ * @value: Pointer to the new values to set
+ *
+ * Sets new values for the uniform at @uniform_location. If this
+ * pipeline has a user program attached and is later used as a source
+ * for drawing, the given values will be assigned to the uniform which
+ * can be accessed from the shader's source. The value for
+ * @uniform_location should be retrieved from the string name of the
+ * uniform by calling cogl_pipeline_get_uniform_location().
+ *
+ * This function can be used to set any matrix type uniform, including
+ * matrix arrays. For example, to set a single mat4 uniform you would
+ * use 4 for @dimensions and 1 for @count. To set an array of 8
+ * mat3 values, you could use 3 for @dimensions and 8 for @count.
+ *
+ * If @transpose is %FALSE then the matrix is expected to be in
+ * column-major order or if it is %TRUE then the matrix is in
+ * row-major order. You can pass a #CoglMatrix by calling by passing
+ * the result of cogl_matrix_get_array() in @value and setting
+ * @transpose to %FALSE.
+ *
+ * Since: 2.0
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_set_uniform_matrix (CoglPipeline *pipeline,
+                                  int uniform_location,
+                                  int dimensions,
+                                  int count,
+                                  gboolean transpose,
+                                  const float *value);
+
+/**
+ * cogl_pipeline_add_snippet:
+ * @pipeline: A #CoglPipeline
+ * @snippet: The #CoglSnippet to add to the vertex processing hook
+ *
+ * Adds a shader snippet to @pipeline. The snippet will wrap around or
+ * replace some part of the pipeline as defined by the hook point in
+ * @snippet. Note that some hook points are specific to a layer and
+ * must be added with cogl_pipeline_add_layer_snippet() instead.
+ *
+ * Since: 1.10
+ * Stability: Unstable
+ */
+void
+cogl_pipeline_add_snippet (CoglPipeline *pipeline,
+                           CoglSnippet *snippet);
 
 #endif /* COGL_ENABLE_EXPERIMENTAL_API */
 

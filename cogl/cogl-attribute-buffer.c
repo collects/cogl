@@ -32,24 +32,28 @@
 #include "cogl-object-private.h"
 #include "cogl-attribute-buffer.h"
 #include "cogl-attribute-buffer-private.h"
+#include "cogl-context-private.h"
 
 static void _cogl_attribute_buffer_free (CoglAttributeBuffer *array);
 
 COGL_BUFFER_DEFINE (AttributeBuffer, attribute_buffer);
 
 CoglAttributeBuffer *
-cogl_attribute_buffer_new (gsize bytes, const void *data)
+cogl_attribute_buffer_new (CoglContext *context,
+                           gsize bytes,
+                           const void *data)
 {
   CoglAttributeBuffer *array = g_slice_new (CoglAttributeBuffer);
   gboolean use_malloc;
 
-  if (!cogl_features_available (COGL_FEATURE_VBOS))
+  if (!(context->private_feature_flags & COGL_PRIVATE_FEATURE_VBOS))
     use_malloc = TRUE;
   else
     use_malloc = FALSE;
 
   /* parent's constructor */
   _cogl_buffer_initialize (COGL_BUFFER (array),
+                           context,
                            bytes,
                            use_malloc,
                            COGL_BUFFER_BIND_TARGET_ATTRIBUTE_BUFFER,

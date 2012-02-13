@@ -25,7 +25,7 @@ m4_define([cogl_version],
 dnl Since the core Cogl library has to also maintain support for the
 dnl Cogl 1.x API for Clutter then we track the 1.x version separately.
 m4_define([cogl_1_minor_version], [9])
-m4_define([cogl_1_micro_version], [1])
+m4_define([cogl_1_micro_version], [5])
 m4_define([cogl_1_version], [1.cogl_1_minor_version.cogl_1_micro_version])
 
 dnl ================================================================
@@ -55,7 +55,7 @@ dnl ================================================================
 #
 #  5. If any interfaces have been removed since the last public release,
 #     then set AGE to 0.
-m4_define([cogl_lt_current], 5)
+m4_define([cogl_lt_current], 7)
 m4_define([cogl_lt_revision], 0)
 m4_define([cogl_lt_age], 0)
 # We do also tell libtool the pretty version:
@@ -81,7 +81,7 @@ AC_CONFIG_HEADERS(config.h)
 dnl ================================================================
 dnl Required versions for dependencies
 dnl ================================================================
-m4_define([glib_req_version],           [2.26.0])
+m4_define([glib_req_version],           [2.28.0])
 m4_define([pangocairo_req_version],     [1.20])
 m4_define([gi_req_version],             [0.9.5])
 m4_define([gdk_pixbuf_req_version],     [2.0])
@@ -393,6 +393,27 @@ AC_ARG_ENABLE(
   enable_examples_install=no
 )
 AM_CONDITIONAL([INSTALL_EXAMPLES], [test "x$enable_examples_install" = "xyes"])
+
+dnl     ============================================================
+dnl     Should glib be used?
+dnl     ============================================================
+AC_ARG_ENABLE(
+  [glib],
+  [AC_HELP_STRING([--enable-glib=@<:@no/yes@:>@], [Enable glib support @<:@default=yes@:>@])],
+  [],
+  enable_glib=yes
+)
+AM_CONDITIONAL([USE_GLIB], [test "x$enable_glib" = "xyes"])
+
+AS_IF([test "x$enable_glib" = "xyes"],
+      [
+        COGL_DEFINES_SYMBOLS="$COGL_DEFINES_SYMBOLS COGL_HAS_GLIB_SUPPORT"
+      ],
+      [
+        EXPERIMENTAL_CONFIG=yes
+        EXPERIMENTAL_OPTIONS="$EXPERIMENTAL_OPTIONS --disable-glib,"
+      ]
+)
 
 dnl     ============================================================
 dnl     Determine which drivers and window systems we can support
@@ -734,6 +755,32 @@ AS_IF([test "x$enable_wayland_egl_platform" == "xyes"],
 AM_CONDITIONAL(SUPPORT_EGL_PLATFORM_WAYLAND,
                [test "x$enable_wayland_egl_platform" = "xyes"])
 
+
+AC_ARG_ENABLE(
+  [kms-egl-platform],
+  [AC_HELP_STRING([--enable-kms-egl-platform=@<:@no/yes@:>@], [Enable support for the KMS egl platform @<:@default=no@:>@])],
+  [],
+  enable_kms_egl_platform=no
+)
+AS_IF([test "x$enable_kms_egl_platform" == "xyes"],
+      [
+        EGL_PLATFORM_COUNT=$((EGL_PLATFORM_COUNT+1))
+        NEED_EGL=yes
+        EGL_PLATFORMS="$EGL_PLATFORMS kms"
+
+        PKG_CHECK_EXISTS([gbm],
+                         [
+                           COGL_PKG_REQUIRES="$COGL_PKG_REQUIRES gbm"
+                           COGL_PKG_REQUIRES="$COGL_PKG_REQUIRES libdrm"
+                           COGL_PKG_REQUIRES="$COGL_PKG_REQUIRES gl"
+                         ],
+                         [AC_MSG_ERROR([Unable to locate required kms libraries])])
+
+        COGL_DEFINES_SYMBOLS="$COGL_DEFINES_SYMBOLS COGL_HAS_EGL_PLATFORM_KMS_SUPPORT"
+      ])
+AM_CONDITIONAL(SUPPORT_EGL_PLATFORM_KMS,
+               [test "x$enable_kms_egl_platform" = "xyes"])
+
 AC_ARG_ENABLE(
   [wayland-egl-server],
   [AC_HELP_STRING([--enable-wayland-egl-server=@<:@no/yes@:>@], [Enable server side wayland support @<:@default=no@:>@])],
@@ -787,15 +834,10 @@ AS_IF([test "x$enable_xlib_egl_platform" = "xyes"],
         NEED_XLIB=yes
         EGL_PLATFORMS="$EGL_PLATFORMS xlib"
 
-        COGL_DEFINES_SYMBOLS="$COGL_DEFINES_SYMBOLS COGL_HAS_EGL_PLATFORM_POWERVR_X11_SUPPORT"
+        COGL_DEFINES_SYMBOLS="$COGL_DEFINES_SYMBOLS COGL_HAS_EGL_PLATFORM_XLIB_SUPPORT"
       ])
-AM_CONDITIONAL(SUPPORT_EGL_PLATFORM_POWERVR_X11,
+AM_CONDITIONAL(SUPPORT_EGL_PLATFORM_XLIB,
                [test "x$enable_xlib_egl_platform" = "xyes"])
-
-
-
-AS_IF([test $EGL_PLATFORM_COUNT -gt 1],
-      [AC_MSG_ERROR(['The --enable-*-egl-platform options are currently mutually exclusive'])])
 
 AS_IF([test "x$NEED_EGL" = "xyes" && test "x$EGL_CHECKED" != "xyes"],
       [
@@ -834,6 +876,25 @@ AS_IF([test "x$NEED_EGL" = "xyes"],
 
 AM_CONDITIONAL(SUPPORT_EGL, [test "x$SUPPORT_EGL" = "xyes"])
 
+AC_ARG_ENABLE(
+  [sdl],
+  [AC_HELP_STRING([--enable-sdl=@<:@no/yes@:>@], [Enable support SDL @<:@default=no@:>@])],
+  [],
+  [enable_sdl=no])
+AS_IF([test "x$enable_sdl" = "xyes"],
+      [
+        PKG_CHECK_EXISTS([sdl],
+                         [],
+                         [AC_MSG_ERROR([SDL support requested but SDL not found])])
+
+        SUPPORT_SDL=yes
+        GL_WINSYS_APIS="$GL_WINSYS_APIS sdl"
+        COGL_PKG_REQUIRES="$COGL_PKG_REQUIRES sdl"
+
+        COGL_DEFINES_SYMBOLS="$COGL_DEFINES_SYMBOLS COGL_HAS_SDL_SUPPORT"
+      ],
+      [SUPPORT_SDL=no])
+AM_CONDITIONAL(SUPPORT_SDL, [test "x$SUPPORT_SDL" = "xyes"])
 
 dnl         ========================================================
 dnl         Check X11 dependencies if required
@@ -931,7 +992,10 @@ if test -n "$COGL_PKG_REQUIRES_GL"; then
   COGL_DEP_LIBS="$COGL_DEP_LIBS $gl_libs"
 fi
 AC_SUBST(COGL_PANGO_PKG_REQUIRES)
-PKG_CHECK_MODULES(COGL_PANGO_DEP, [$COGL_PANGO_PKG_REQUIRES])
+
+AS_IF([test "x$enable_cogl_pango" = "xyes"],
+  PKG_CHECK_MODULES(COGL_PANGO_DEP, [$COGL_PANGO_PKG_REQUIRES])
+)
 
 dnl ================================================================
 dnl Misc program dependencies.
@@ -960,9 +1024,47 @@ dnl available. Cogl has a fallback if needed.
 AC_CHECK_FUNCS([ffs])
 
 dnl ================================================================
+dnl Platform values
+dnl ================================================================
+
+dnl These are values from system headers that we want to copy into the
+dnl public Cogl headers without having to include the system header
+AC_CHECK_HEADER(poll.h,
+        [
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLIN, POLLIN, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLIN]))
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLPRI, POLLPRI, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLPRI]))
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLOUT, POLLOUT, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLOUT]))
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLERR, POLLERR, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLERR]))
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLHUP, POLLHUP, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLHUP]))
+         AC_COMPUTE_INT(COGL_SYSDEF_POLLNVAL, POLLNVAL, [#include <poll.h>],
+                        AC_MSG_ERROR([Unable to get value of POLLNVAL]))
+        ],
+        [
+         COGL_SYSDEF_POLLIN=1
+         COGL_SYSDEF_POLLPRI=2
+         COGL_SYSDEF_POLLOUT=4
+         COGL_SYSDEF_POLLERR=8
+         COGL_SYSDEF_POLLHUP=16
+         COGL_SYSDEF_POLLNVAL=32
+        ])
+COGL_DEFINES_EXTRA="$COGL_DEFINES_EXTRA
+#define COGL_SYSDEF_POLLIN $COGL_SYSDEF_POLLIN
+#define COGL_SYSDEF_POLLPRI $COGL_SYSDEF_POLLPRI
+#define COGL_SYSDEF_POLLOUT $COGL_SYSDEF_POLLOUT
+#define COGL_SYSDEF_POLLERR $COGL_SYSDEF_POLLERR
+#define COGL_SYSDEF_POLLHUP $COGL_SYSDEF_POLLHUP
+#define COGL_SYSDEF_POLLNVAL $COGL_SYSDEF_POLLNVAL
+"
+
+dnl ================================================================
 dnl What needs to be substituted in other files
 dnl ================================================================
-COGL_DEFINES=""
+COGL_DEFINES="$COGL_DEFINES_EXTRA"
 for x in $COGL_DEFINES_SYMBOLS; do
   COGL_DEFINES="$COGL_DEFINES
 #define $x 1"
@@ -1001,13 +1103,20 @@ AC_SUBST(MAINTAINER_CFLAGS)
 AC_OUTPUT(
 Makefile
 README
+config.h.win32
+build/Makefile
+build/win32/Makefile
+build/win32/vs9/Makefile
+build/win32/vs10/Makefile
 cogl/Makefile
 cogl/cogl-1.0.pc
 cogl/cogl-2.0-experimental.pc
 cogl/cogl-defines.h
+cogl/cogl.rc
 cogl-pango/Makefile
 cogl-pango/cogl-pango-1.0.pc
 cogl-pango/cogl-pango-2.0-experimental.pc
+cogl-pango/cogl-pango.rc
 doc/Makefile
 doc/reference/Makefile
 doc/reference/cogl/Makefile

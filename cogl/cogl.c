@@ -141,69 +141,6 @@ cogl_clear (const CoglColor *color, unsigned long buffers)
   cogl_framebuffer_clear (cogl_get_draw_framebuffer (), buffers, color);
 }
 
-#if defined (HAVE_COGL_GL) || defined (HAVE_COGL_GLES)
-
-static gboolean
-toggle_client_flag (CoglContext *ctx,
-		    unsigned long new_flags,
-		    unsigned long flag,
-		    GLenum gl_flag)
-{
-  g_return_val_if_fail (ctx->driver != COGL_DRIVER_GLES2, FALSE);
-
-  /* Toggles and caches a single client-side enable flag
-   * on or off by comparing to current state
-   */
-  if (new_flags & flag)
-    {
-      if (!(ctx->enable_flags & flag))
-	{
-	  GE( ctx, glEnableClientState (gl_flag) );
-	  ctx->enable_flags |= flag;
-	  return TRUE;
-	}
-    }
-  else if (ctx->enable_flags & flag)
-    {
-      GE( ctx, glDisableClientState (gl_flag) );
-      ctx->enable_flags &= ~flag;
-    }
-
-  return FALSE;
-}
-
-#endif
-
-void
-_cogl_enable (unsigned long flags)
-{
-  /* This function essentially caches glEnable state() in the
-   * hope of lessening number GL traffic.
-  */
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-#if defined (HAVE_COGL_GL) || defined (HAVE_COGL_GLES)
-  if (ctx->driver != COGL_DRIVER_GLES2)
-    {
-      toggle_client_flag (ctx, flags,
-                          COGL_ENABLE_VERTEX_ARRAY,
-                          GL_VERTEX_ARRAY);
-
-      toggle_client_flag (ctx, flags,
-                          COGL_ENABLE_COLOR_ARRAY,
-                          GL_COLOR_ARRAY);
-    }
-#endif
-}
-
-unsigned long
-_cogl_get_enable (void)
-{
-  _COGL_GET_CONTEXT (ctx, 0);
-
-  return ctx->enable_flags;
-}
-
 /* XXX: This API has been deprecated */
 void
 cogl_set_depth_test_enabled (gboolean setting)
@@ -319,6 +256,38 @@ cogl_features_available (CoglFeatureFlags features)
   return (ctx->feature_flags & features) == features;
 }
 
+gboolean
+cogl_has_feature (CoglContext *ctx, CoglFeatureID feature)
+{
+  return COGL_FLAGS_GET (ctx->features, feature);
+}
+
+gboolean
+cogl_has_features (CoglContext *ctx, ...)
+{
+  va_list args;
+  CoglFeatureID feature;
+
+  va_start (args, ctx);
+  while ((feature = va_arg (args, CoglFeatureID)))
+    if (!cogl_has_feature (ctx, feature))
+      return FALSE;
+  va_end (args);
+
+  return TRUE;
+}
+
+void
+cogl_foreach_feature (CoglContext *ctx,
+                      CoglFeatureCallback callback,
+                      void *user_data)
+{
+  int i;
+  for (i = 0; i < _COGL_N_FEATURE_IDS; i++)
+    if (COGL_FLAGS_GET (ctx->features, i))
+      callback (i, user_data);
+}
+
 /* XXX: This function should either be replaced with one returning
  * integers, or removed/deprecated and make the
  * _cogl_framebuffer_get_viewport* functions public.
@@ -421,7 +390,7 @@ _cogl_read_pixels_with_rowstride (int x,
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (source == COGL_READ_PIXELS_COLOR_BUFFER);
+  _COGL_RETURN_IF_FAIL (source == COGL_READ_PIXELS_COLOR_BUFFER);
 
   if (width == 1 && height == 1 && !framebuffer->clear_clip_dirty)
     {
@@ -452,7 +421,7 @@ _cogl_read_pixels_with_rowstride (int x,
 
   _cogl_framebuffer_flush_state (cogl_get_draw_framebuffer (),
                                  framebuffer,
-                                 0);
+                                 COGL_FRAMEBUFFER_STATE_BIND);
 
   framebuffer_height = cogl_framebuffer_get_height (framebuffer);
 
@@ -613,7 +582,6 @@ cogl_read_pixels (int x,
 void
 cogl_begin_gl (void)
 {
-  unsigned long enable_flags = 0;
   CoglPipeline *pipeline;
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
@@ -639,7 +607,7 @@ cogl_begin_gl (void)
    * always be done first when preparing to draw. */
   _cogl_framebuffer_flush_state (cogl_get_draw_framebuffer (),
                                  _cogl_get_read_framebuffer (),
-                                 0);
+                                 COGL_FRAMEBUFFER_STATE_ALL);
 
   /* Setup the state for the current pipeline */
 
@@ -665,8 +633,6 @@ cogl_begin_gl (void)
                                  FALSE,
                                  cogl_pipeline_get_n_layers (pipeline));
 
-  _cogl_enable (enable_flags);
-
   /* Disable any cached vertex arrays */
   _cogl_attribute_disable_cached_arrays ();
 }
@@ -690,49 +656,37 @@ cogl_end_gl (void)
 void
 cogl_push_matrix (void)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_push (modelview_stack);
+  cogl_framebuffer_push_matrix (cogl_get_draw_framebuffer ());
 }
 
 void
 cogl_pop_matrix (void)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_pop (modelview_stack);
+  cogl_framebuffer_pop_matrix (cogl_get_draw_framebuffer ());
 }
 
 void
 cogl_scale (float x, float y, float z)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_scale (modelview_stack, x, y, z);
+  cogl_framebuffer_scale (cogl_get_draw_framebuffer (), x, y, z);
 }
 
 void
 cogl_translate (float x, float y, float z)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_translate (modelview_stack, x, y, z);
+  cogl_framebuffer_translate (cogl_get_draw_framebuffer (), x, y, z);
 }
 
 void
 cogl_rotate (float angle, float x, float y, float z)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_rotate (modelview_stack, angle, x, y, z);
+  cogl_framebuffer_rotate (cogl_get_draw_framebuffer (), angle, x, y, z);
 }
 
 void
 cogl_transform (const CoglMatrix *matrix)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_multiply (modelview_stack, matrix);
+  cogl_framebuffer_transform (cogl_get_draw_framebuffer (), matrix);
 }
 
 void
@@ -741,14 +695,8 @@ cogl_perspective (float fov_y,
 		  float z_near,
 		  float z_far)
 {
-  float ymax = z_near * tanf (fov_y * G_PI / 360.0);
-
-  cogl_frustum (-ymax * aspect,  /* left */
-                ymax * aspect,   /* right */
-                -ymax,           /* bottom */
-                ymax,            /* top */
-                z_near,
-                z_far);
+  cogl_framebuffer_perspective (cogl_get_draw_framebuffer (),
+                                fov_y, aspect, z_near, z_far);
 }
 
 void
@@ -759,24 +707,8 @@ cogl_frustum (float        left,
 	      float        z_near,
 	      float        z_far)
 {
-  CoglMatrixStack *projection_stack =
-    _cogl_framebuffer_get_projection_stack (cogl_get_draw_framebuffer ());
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  /* XXX: The projection matrix isn't currently tracked in the journal
-   * so we need to flush all journaled primitives first... */
-  cogl_flush ();
-
-  _cogl_matrix_stack_load_identity (projection_stack);
-
-  _cogl_matrix_stack_frustum (projection_stack,
-                              left,
-                              right,
-                              bottom,
-                              top,
-                              z_near,
-                              z_far);
+  cogl_framebuffer_frustum (cogl_get_draw_framebuffer (),
+                            left, right, bottom, top, z_near, z_far);
 }
 
 void
@@ -784,64 +716,35 @@ cogl_ortho (float left,
 	    float right,
 	    float bottom,
 	    float top,
-	    float z_near,
-	    float z_far)
+	    float near,
+	    float far)
 {
-  CoglMatrix ortho;
-  CoglMatrixStack *projection_stack =
-    _cogl_framebuffer_get_projection_stack (cogl_get_draw_framebuffer ());
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  /* XXX: The projection matrix isn't currently tracked in the journal
-   * so we need to flush all journaled primitives first... */
-  cogl_flush ();
-
-  cogl_matrix_init_identity (&ortho);
-  cogl_matrix_ortho (&ortho, left, right, bottom, top, z_near, z_far);
-  _cogl_matrix_stack_set (projection_stack, &ortho);
+  cogl_framebuffer_orthographic (cogl_get_draw_framebuffer (),
+                                 left, top, right, bottom, near, far);
 }
 
 void
 cogl_get_modelview_matrix (CoglMatrix *matrix)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_get (modelview_stack, matrix);
-  _COGL_MATRIX_DEBUG_PRINT (matrix);
+  cogl_framebuffer_get_modelview_matrix (cogl_get_draw_framebuffer (), matrix);
 }
 
 void
 cogl_set_modelview_matrix (CoglMatrix *matrix)
 {
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_set (modelview_stack, matrix);
-  _COGL_MATRIX_DEBUG_PRINT (matrix);
+  cogl_framebuffer_set_modelview_matrix (cogl_get_draw_framebuffer (), matrix);
 }
 
 void
 cogl_get_projection_matrix (CoglMatrix *matrix)
 {
-  CoglMatrixStack *projection_stack =
-    _cogl_framebuffer_get_projection_stack (cogl_get_draw_framebuffer ());
-  _cogl_matrix_stack_get (projection_stack, matrix);
-  _COGL_MATRIX_DEBUG_PRINT (matrix);
+  cogl_framebuffer_get_projection_matrix (cogl_get_draw_framebuffer (), matrix);
 }
 
 void
 cogl_set_projection_matrix (CoglMatrix *matrix)
 {
-  CoglMatrixStack *projection_stack =
-    _cogl_framebuffer_get_projection_stack (cogl_get_draw_framebuffer ());
-
-  /* XXX: The projection matrix isn't currently tracked in the journal
-   * so we need to flush all journaled primitives first... */
-  cogl_flush ();
-
-  _cogl_matrix_stack_set (projection_stack, matrix);
-
-  _COGL_MATRIX_DEBUG_PRINT (matrix);
+  cogl_framebuffer_set_projection_matrix (cogl_get_draw_framebuffer (), matrix);
 }
 
 CoglClipState *
@@ -892,7 +795,7 @@ cogl_push_source (void *material_or_pipeline)
 {
   CoglPipeline *pipeline = COGL_PIPELINE (material_or_pipeline);
 
-  g_return_if_fail (cogl_is_pipeline (pipeline));
+  _COGL_RETURN_IF_FAIL (cogl_is_pipeline (pipeline));
 
   _cogl_push_source (pipeline, TRUE);
 }
@@ -907,7 +810,7 @@ _cogl_push_source (CoglPipeline *pipeline, gboolean enable_legacy)
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (cogl_is_pipeline (pipeline));
+  _COGL_RETURN_IF_FAIL (cogl_is_pipeline (pipeline));
 
   if (ctx->source_stack)
     {
@@ -932,7 +835,7 @@ cogl_pop_source (void)
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (ctx->source_stack);
+  _COGL_RETURN_IF_FAIL (ctx->source_stack);
 
   top = ctx->source_stack->data;
   top->push_count--;
@@ -953,7 +856,7 @@ cogl_get_source (void)
 
   _COGL_GET_CONTEXT (ctx, NULL);
 
-  g_return_val_if_fail (ctx->source_stack, NULL);
+  _COGL_RETURN_VAL_IF_FAIL (ctx->source_stack, NULL);
 
   top = ctx->source_stack->data;
   return top->pipeline;
@@ -966,7 +869,7 @@ _cogl_get_enable_legacy_state (void)
 
   _COGL_GET_CONTEXT (ctx, FALSE);
 
-  g_return_val_if_fail (ctx->source_stack, FALSE);
+  _COGL_RETURN_VAL_IF_FAIL (ctx->source_stack, FALSE);
 
   top = ctx->source_stack->data;
   return top->enable_legacy;
@@ -980,8 +883,8 @@ cogl_set_source (void *material_or_pipeline)
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (cogl_is_pipeline (pipeline));
-  g_return_if_fail (ctx->source_stack);
+  _COGL_RETURN_IF_FAIL (cogl_is_pipeline (pipeline));
+  _COGL_RETURN_IF_FAIL (ctx->source_stack);
 
   top = ctx->source_stack->data;
   if (top->pipeline == pipeline && top->enable_legacy)
@@ -1008,7 +911,7 @@ cogl_set_source_texture (CoglTexture *texture)
 {
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_return_if_fail (texture != NULL);
+  _COGL_RETURN_IF_FAIL (texture != NULL);
 
   cogl_pipeline_set_layer_texture (ctx->texture_pipeline, 0, texture);
   cogl_set_source (ctx->texture_pipeline);

@@ -4,11 +4,13 @@
 /* The state for this example... */
 typedef struct _Data
 {
+  CoglFramebuffer *fb;
   int framebuffer_width;
   int framebuffer_height;
 
   CoglMatrix view;
 
+  CoglIndices *indices;
   CoglPrimitive *prim;
   CoglTexture *texture;
   CoglPipeline *crate_pipeline;
@@ -23,25 +25,25 @@ typedef struct _Data
 
   GTimer *timer;
 
+  gboolean swap_ready;
+
 } Data;
 
 /* A static identity matrix initialized for convenience. */
 static CoglMatrix identity;
 /* static colors initialized for convenience. */
-static CoglColor black;
 static CoglColor white;
 
-/* A cube modelled as a list of triangles. Potentially this could be
- * done more efficiently as a triangle strip or using a separate index
- * array, but this way is pretty simple, if a little verbose. */
-CoglVertexP3T2 vertices[] =
+/* A cube modelled using 4 vertices for each face.
+ *
+ * We use an index buffer when drawing the cube later so the GPU will
+ * actually read each face as 2 separate triangles.
+ */
+static CoglVertexP3T2 vertices[] =
 {
   /* Front face */
   { /* pos = */ -1.0f, -1.0f,  1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */  1.0f, -1.0f,  1.0f, /* tex coords = */ 1.0f, 1.0f},
-  { /* pos = */  1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
-
-  { /* pos = */ -1.0f, -1.0f,  1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */  1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */ -1.0f,  1.0f,  1.0f, /* tex coords = */ 0.0f, 0.0f},
 
@@ -49,17 +51,11 @@ CoglVertexP3T2 vertices[] =
   { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */ -1.0f,  1.0f, -1.0f, /* tex coords = */ 1.0f, 1.0f},
   { /* pos = */  1.0f,  1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f},
-
-  { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 0.0f},
-  { /* pos = */  1.0f,  1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */  1.0f, -1.0f, -1.0f, /* tex coords = */ 0.0f, 0.0f},
 
   /* Top face */
   { /* pos = */ -1.0f,  1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */ -1.0f,  1.0f,  1.0f, /* tex coords = */ 0.0f, 0.0f},
-  { /* pos = */  1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
-
-  { /* pos = */ -1.0f,  1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */  1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */  1.0f,  1.0f, -1.0f, /* tex coords = */ 1.0f, 1.0f},
 
@@ -67,17 +63,11 @@ CoglVertexP3T2 vertices[] =
   { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 1.0f},
   { /* pos = */  1.0f, -1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */  1.0f, -1.0f,  1.0f, /* tex coords = */ 0.0f, 0.0f},
-
-  { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 1.0f},
-  { /* pos = */  1.0f, -1.0f,  1.0f, /* tex coords = */ 0.0f, 0.0f},
   { /* pos = */ -1.0f, -1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
 
   /* Right face */
   { /* pos = */ 1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */ 1.0f,  1.0f, -1.0f, /* tex coords = */ 1.0f, 1.0f},
-  { /* pos = */ 1.0f,  1.0f,  1.0f, /* tex coords = */ 0.0f, 1.0f},
-
-  { /* pos = */ 1.0f, -1.0f, -1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */ 1.0f,  1.0f,  1.0f, /* tex coords = */ 0.0f, 1.0f},
   { /* pos = */ 1.0f, -1.0f,  1.0f, /* tex coords = */ 0.0f, 0.0f},
 
@@ -85,24 +75,27 @@ CoglVertexP3T2 vertices[] =
   { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 0.0f, 0.0f},
   { /* pos = */ -1.0f, -1.0f,  1.0f, /* tex coords = */ 1.0f, 0.0f},
   { /* pos = */ -1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 1.0f},
-
-  { /* pos = */ -1.0f, -1.0f, -1.0f, /* tex coords = */ 0.0f, 0.0f},
-  { /* pos = */ -1.0f,  1.0f,  1.0f, /* tex coords = */ 1.0f, 1.0f},
   { /* pos = */ -1.0f,  1.0f, -1.0f, /* tex coords = */ 0.0f, 1.0f}
 };
 
 static void
 paint (Data *data)
 {
+  CoglFramebuffer *fb = data->fb;
   float rotation;
 
-  cogl_clear (&black, COGL_BUFFER_BIT_COLOR|COGL_BUFFER_BIT_DEPTH);
+  cogl_framebuffer_clear4f (fb,
+                            COGL_BUFFER_BIT_COLOR|COGL_BUFFER_BIT_DEPTH,
+                            0, 0, 0, 1);
 
-  cogl_push_matrix ();
+  cogl_framebuffer_push_matrix (fb);
 
-  cogl_translate (data->framebuffer_width / 2, data->framebuffer_height / 2, 0);
+  cogl_framebuffer_translate (fb,
+                              data->framebuffer_width / 2,
+                              data->framebuffer_height / 2,
+                              0);
 
-  cogl_scale (75, 75, 75);
+  cogl_framebuffer_scale (fb, 75, 75, 75);
 
   /* Update the rotation based on the time the application has been
      running so that we get a linear animation regardless of the frame
@@ -118,25 +111,13 @@ paint (Data *data)
    * we want it to be a rotation around the origin, before it is
    * scaled and translated.
    */
-  cogl_rotate (rotation, 0, 0, 1);
-  cogl_rotate (rotation, 0, 1, 0);
-  cogl_rotate (rotation, 1, 0, 0);
+  cogl_framebuffer_rotate (fb, rotation, 0, 0, 1);
+  cogl_framebuffer_rotate (fb, rotation, 0, 1, 0);
+  cogl_framebuffer_rotate (fb, rotation, 1, 0, 0);
 
-  /* Whenever you draw something with Cogl using geometry defined by
-   * one of cogl_rectangle, cogl_polygon, cogl_path or
-   * cogl_vertex_buffer then you have a current pipeline that defines
-   * how that geometry should be processed.
-   *
-   * Here we are making our crate pipeline current which will sample
-   * the crate texture when fragment processing. */
-  cogl_set_source (data->crate_pipeline);
+  cogl_framebuffer_draw_primitive (fb, data->crate_pipeline, data->prim);
 
-  /* Give Cogl some geometry to draw. */
-  cogl_primitive_draw (data->prim);
-
-  cogl_set_depth_test_enabled (FALSE);
-
-  cogl_pop_matrix ();
+  cogl_framebuffer_pop_matrix (fb);
 
   /* And finally render our Pango layouts... */
 
@@ -146,6 +127,15 @@ paint (Data *data)
                             (data->framebuffer_height / 2) -
                             (data->hello_label_height / 2),
                             &white, 0);
+}
+
+static void
+swap_notify_cb (CoglFramebuffer *framebuffer,
+                void *user_data)
+{
+  Data *data = user_data;
+
+  data->swap_ready = TRUE;
 }
 
 int
@@ -159,6 +149,7 @@ main (int argc, char **argv)
   PangoRectangle hello_label_size;
   float fovy, aspect, z_near, z_2d, z_far;
   CoglDepthState depth_state;
+  gboolean has_swap_notify;
 
   g_type_init ();
 
@@ -168,16 +159,11 @@ main (int argc, char **argv)
       return 1;
   }
 
-  data.framebuffer_width = 640;
-  data.framebuffer_height = 480;
-  onscreen = cogl_onscreen_new (ctx, data.framebuffer_width, data.framebuffer_height);
-  /* Eventually there will be an implicit allocate on first use so this
-   * will become optional... */
+  onscreen = cogl_onscreen_new (ctx, 640, 480);
   fb = COGL_FRAMEBUFFER (onscreen);
-  if (!cogl_framebuffer_allocate (fb, &error)) {
-      fprintf (stderr, "Failed to allocate framebuffer: %s\n", error->message);
-      return 1;
-  }
+  data.fb = fb;
+  data.framebuffer_width = cogl_framebuffer_get_width (fb);
+  data.framebuffer_height = cogl_framebuffer_get_height (fb);
 
   data.timer = g_timer_new ();
 
@@ -214,12 +200,23 @@ main (int argc, char **argv)
 
   /* Initialize some convenient constants */
   cogl_matrix_init_identity (&identity);
-  cogl_color_set_from_4ub (&black, 0x00, 0x00, 0x00, 0xff);
   cogl_color_set_from_4ub (&white, 0xff, 0xff, 0xff, 0xff);
 
-  data.prim = cogl_primitive_new_p3t2 (COGL_VERTICES_MODE_TRIANGLES,
+  /* rectangle indices allow the GPU to interpret a list of quads (the
+   * faces of our cube) as a list of triangles.
+   *
+   * Since this is a very common thing to do
+   * cogl_get_rectangle_indices() is a convenience function for
+   * accessing internal index buffers that can be shared.
+   */
+  data.indices = cogl_get_rectangle_indices (ctx, 6 /* n_rectangles */);
+  data.prim = cogl_primitive_new_p3t2 (ctx, COGL_VERTICES_MODE_TRIANGLES,
                                        G_N_ELEMENTS (vertices),
                                        vertices);
+  /* Each face will have 6 indices so we have 6 * 6 indices in total... */
+  cogl_primitive_set_indices (data.prim,
+                              data.indices,
+                              6 * 6);
 
   /* Load a jpeg crate texture from a file */
   printf ("crate.jpg (CC by-nc-nd http://bit.ly/9kP45T) ShadowRunner27 http://bit.ly/m1YXLh\n");
@@ -270,10 +267,42 @@ main (int argc, char **argv)
 
   cogl_push_framebuffer (fb);
 
+  data.swap_ready = TRUE;
+
+  has_swap_notify =
+    cogl_has_feature (ctx, COGL_FEATURE_ID_SWAP_BUFFERS_EVENT);
+
+  if (has_swap_notify)
+    cogl_framebuffer_add_swap_buffers_callback (fb,
+                                                swap_notify_cb,
+                                                &data);
+
   while (1)
     {
-      paint (&data);
-      cogl_framebuffer_swap_buffers (fb);
+      CoglPollFD *poll_fds;
+      int n_poll_fds;
+      gint64 timeout;
+
+      if (data.swap_ready)
+        {
+          paint (&data);
+          cogl_framebuffer_swap_buffers (fb);
+        }
+
+      cogl_poll_get_info (ctx, &poll_fds, &n_poll_fds, &timeout);
+
+      if (!has_swap_notify)
+        {
+          /* If the winsys doesn't support swap event notification
+             then we'll just redraw constantly */
+          data.swap_ready = TRUE;
+          timeout = 0;
+        }
+
+      g_poll ((GPollFD *) poll_fds, n_poll_fds,
+              timeout == -1 ? -1 : timeout / 1000);
+
+      cogl_poll_dispatch (ctx, poll_fds, n_poll_fds);
     }
 
   return 0;

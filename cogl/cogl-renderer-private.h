@@ -44,8 +44,11 @@ struct _CoglRenderer
   gboolean connected;
   const CoglWinsysVtable *winsys_vtable;
   CoglWinsysID winsys_id_override;
+  GList *constraints;
+
 #ifdef COGL_HAS_XLIB_SUPPORT
   Display *foreign_xdpy;
+  gboolean xlib_enable_event_retrieval;
 #endif
 
   CoglDriver driver;
@@ -56,6 +59,7 @@ struct _CoglRenderer
 #if defined (COGL_HAS_EGL_PLATFORM_WAYLAND_SUPPORT)
   struct wl_display *foreign_wayland_display;
   struct wl_compositor *foreign_wayland_compositor;
+  struct wl_shell *foreign_wayland_shell;
 #endif
   /* List of callback functions that will be given every native event */
   GSList *event_filters;

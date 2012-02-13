@@ -36,6 +36,8 @@
 #include "cogl-profile.h"
 #include "cogl-queue.h"
 #include "cogl-internal.h"
+#include "cogl-boxed-value.h"
+#include "cogl-pipeline-snippet-private.h"
 
 #include <glib.h>
 
@@ -135,17 +137,29 @@
 
 /* If we have either of the GLSL backends then we also need a GLSL
    progend to combine the shaders generated into a single
-   program. Currently there is only one progend but if we ever add
-   other languages they would likely need their own progend too. The
-   progends are different from the other backends because there can be
-   more than one in use for each pipeline. All of the progends are
-   invoked whenever a pipeline is flushed. */
+   program. Same goes for the fixed progends which are used to flush
+   the matrices */
+#ifdef COGL_PIPELINE_FRAGEND_FIXED
+
+#define COGL_PIPELINE_PROGEND_FIXED      0
+
+#ifdef COGL_PIPELINE_FRAGEND_GLSL
+#define COGL_PIPELINE_PROGEND_GLSL       1
+#define COGL_PIPELINE_N_PROGENDS         2
+#else
+#define COGL_PIPELINE_N_PROGENDS         1
+#endif
+
+#else /* COGL_PIPELINE_FRAGEND_FIXED */
+
 #ifdef COGL_PIPELINE_FRAGEND_GLSL
 #define COGL_PIPELINE_PROGEND_GLSL       0
 #define COGL_PIPELINE_N_PROGENDS         1
 #else
 #define COGL_PIPELINE_N_PROGENDS         0
 #endif
+
+#endif /* COGL_PIPELINE_FRAGEND_FIXED */
 
 /* XXX: should I rename these as
  * COGL_PIPELINE_STATE_INDEX_XYZ... ?
@@ -166,6 +180,9 @@ typedef enum
   COGL_PIPELINE_STATE_POINT_SIZE_INDEX,
   COGL_PIPELINE_STATE_LOGIC_OPS_INDEX,
   COGL_PIPELINE_STATE_CULL_FACE_INDEX,
+  COGL_PIPELINE_STATE_UNIFORMS_INDEX,
+  COGL_PIPELINE_STATE_VERTEX_SNIPPETS_INDEX,
+  COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS_INDEX,
 
   /* non-sparse */
   COGL_PIPELINE_STATE_REAL_BLEND_ENABLE_INDEX,
@@ -213,6 +230,12 @@ typedef enum _CoglPipelineState
     1L<<COGL_PIPELINE_STATE_LOGIC_OPS_INDEX,
   COGL_PIPELINE_STATE_CULL_FACE =
     1L<<COGL_PIPELINE_STATE_CULL_FACE_INDEX,
+  COGL_PIPELINE_STATE_UNIFORMS =
+    1L<<COGL_PIPELINE_STATE_UNIFORMS_INDEX,
+  COGL_PIPELINE_STATE_VERTEX_SNIPPETS =
+    1L<<COGL_PIPELINE_STATE_VERTEX_SNIPPETS_INDEX,
+  COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS =
+    1L<<COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS_INDEX,
 
   COGL_PIPELINE_STATE_REAL_BLEND_ENABLE =
     1L<<COGL_PIPELINE_STATE_REAL_BLEND_ENABLE_INDEX,
@@ -236,7 +259,9 @@ typedef enum _CoglPipelineState
    COGL_PIPELINE_STATE_LAYERS | \
    COGL_PIPELINE_STATE_LIGHTING | \
    COGL_PIPELINE_STATE_BLEND | \
-   COGL_PIPELINE_STATE_USER_SHADER)
+   COGL_PIPELINE_STATE_USER_SHADER | \
+   COGL_PIPELINE_STATE_VERTEX_SNIPPETS | \
+   COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
 
 #define COGL_PIPELINE_STATE_NEEDS_BIG_STATE \
   (COGL_PIPELINE_STATE_LIGHTING | \
@@ -248,7 +273,10 @@ typedef enum _CoglPipelineState
    COGL_PIPELINE_STATE_FOG | \
    COGL_PIPELINE_STATE_POINT_SIZE | \
    COGL_PIPELINE_STATE_LOGIC_OPS | \
-   COGL_PIPELINE_STATE_CULL_FACE)
+   COGL_PIPELINE_STATE_CULL_FACE | \
+   COGL_PIPELINE_STATE_UNIFORMS | \
+   COGL_PIPELINE_STATE_VERTEX_SNIPPETS | \
+   COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
 
 #define COGL_PIPELINE_STATE_MULTI_PROPERTY \
   (COGL_PIPELINE_STATE_LAYERS | \
@@ -257,11 +285,15 @@ typedef enum _CoglPipelineState
    COGL_PIPELINE_STATE_DEPTH | \
    COGL_PIPELINE_STATE_FOG | \
    COGL_PIPELINE_STATE_LOGIC_OPS | \
-   COGL_PIPELINE_STATE_CULL_FACE)
+   COGL_PIPELINE_STATE_CULL_FACE | \
+   COGL_PIPELINE_STATE_UNIFORMS | \
+   COGL_PIPELINE_STATE_VERTEX_SNIPPETS | \
+   COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
 
 #define COGL_PIPELINE_STATE_AFFECTS_VERTEX_CODEGEN \
   (COGL_PIPELINE_STATE_LAYERS | \
-   COGL_PIPELINE_STATE_USER_SHADER)
+   COGL_PIPELINE_STATE_USER_SHADER | \
+   COGL_PIPELINE_STATE_VERTEX_SNIPPETS)
 
 typedef enum
 {
@@ -297,20 +329,6 @@ typedef enum _CoglPipelineBlendEnable
   COGL_PIPELINE_BLEND_ENABLE_DISABLED,
   COGL_PIPELINE_BLEND_ENABLE_AUTOMATIC
 } CoglPipelineBlendEnable;
-
-typedef enum
-{
-  COGL_PIPELINE_CULL_FACE_MODE_NONE,
-  COGL_PIPELINE_CULL_FACE_MODE_FRONT,
-  COGL_PIPELINE_CULL_FACE_MODE_BACK,
-  COGL_PIPELINE_CULL_FACE_MODE_BOTH
-} CoglPipelineCullFaceMode;
-
-typedef enum
-{
-  COGL_WINDING_CLOCKWISE,
-  COGL_WINDING_COUNTER_CLOCKWISE
-} CoglWinding;
 
 typedef struct
 {
@@ -349,6 +367,20 @@ typedef struct
 
 typedef struct
 {
+  CoglBitmask override_mask;
+
+  /* This is an array of values. Only the uniforms that have a bit set
+     in override_mask have a corresponding value here. The uniform's
+     location is implicit from the order in this array */
+  CoglBoxedValue *override_values;
+
+  /* Uniforms that have been modified since this pipeline was last
+     flushed */
+  CoglBitmask changed_mask;
+} CoglPipelineUniformsState;
+
+typedef struct
+{
   CoglPipelineLightingState lighting_state;
   CoglPipelineAlphaFuncState alpha_state;
   CoglPipelineBlendState blend_state;
@@ -358,6 +390,9 @@ typedef struct
   float point_size;
   CoglPipelineLogicOpsState logic_ops_state;
   CoglPipelineCullFaceState cull_face_state;
+  CoglPipelineUniformsState uniforms_state;
+  CoglPipelineSnippetList vertex_snippets;
+  CoglPipelineSnippetList fragment_snippets;
 } CoglPipelineBigState;
 
 typedef enum
@@ -542,7 +577,8 @@ typedef struct _CoglPipelineVertend
 {
   gboolean (*start) (CoglPipeline *pipeline,
                      int n_layers,
-                     unsigned long pipelines_difference);
+                     unsigned long pipelines_difference,
+                     int n_tex_coord_attribs);
   gboolean (*add_layer) (CoglPipeline *pipeline,
                          CoglPipelineLayer *layer,
                          unsigned long layers_difference);
@@ -923,10 +959,6 @@ CoglPipeline *
 _cogl_pipeline_find_equivalent_parent (CoglPipeline *pipeline,
                                        CoglPipelineState pipeline_state,
                                        CoglPipelineLayerState layer_state);
-
-CoglTexture *
-_cogl_pipeline_get_layer_texture (CoglPipeline *pipeline,
-                                  int layer_index);
 
 void
 _cogl_pipeline_get_layer_combine_constant (CoglPipeline *pipeline,

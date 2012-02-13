@@ -29,6 +29,9 @@
 #include "config.h"
 #endif
 
+#include <string.h>
+
+#include "cogl-util.h"
 #include "cogl-context-private.h"
 #include "cogl-pipeline-private.h"
 #include "cogl-pipeline-opengl-private.h"
@@ -43,6 +46,9 @@
 #include "cogl-pipeline-fragend-glsl-private.h"
 #include "cogl-pipeline-vertend-glsl-private.h"
 #include "cogl-pipeline-cache.h"
+#include "cogl-pipeline-state-private.h"
+#include "cogl-attribute-private.h"
+#include "cogl-framebuffer-private.h"
 
 #ifdef HAVE_COGL_GLES2
 
@@ -105,39 +111,39 @@ typedef struct
    * array of texture coordinate varyings, but to know how to emit the
    * declaration we need to know how many texture coordinate
    * attributes are in use.  The boilerplate also needs to be changed
-   * if this increases. */
+   * if this changes. */
   int n_tex_coord_attribs;
 
 #ifdef HAVE_COGL_GLES2
   unsigned long dirty_builtin_uniforms;
   GLint builtin_uniform_locations[G_N_ELEMENTS (builtin_uniforms)];
 
-  /* Under GLES2 we can't use the builtin functions to set attribute
-     pointers such as the vertex position. Instead the vertex
-     attribute code needs to query the attribute numbers from the
-     progend backend */
-  int position_attribute_location;
-  int color_attribute_location;
-  int normal_attribute_location;
-  int tex_coord0_attribute_location;
-  /* We only allocate this array if more than one tex coord attribute
-     is requested because most pipelines will only use one layer */
-  GArray *tex_coord_attribute_locations;
-
   GLint modelview_uniform;
   GLint projection_uniform;
   GLint mvp_uniform;
 
-  CoglMatrixStack *flushed_modelview_stack;
-  unsigned int flushed_modelview_stack_age;
-  gboolean flushed_modelview_is_identity;
-  CoglMatrixStack *flushed_projection_stack;
-  unsigned int flushed_projection_stack_age;
+  CoglMatrixStackCache projection_cache;
+  CoglMatrixStackCache modelview_cache;
 #endif
 
   /* We need to track the last pipeline that the program was used with
    * so know if we need to update all of the uniforms */
   CoglPipeline *last_used_for_pipeline;
+
+  /* Array of GL uniform locations indexed by Cogl's uniform
+     location. We are careful only to allocated this array if a custom
+     uniform is actually set */
+  GArray *uniform_locations;
+
+  /* Array of attribute locations. */
+  GArray *attribute_locations;
+
+  /* The 'flip' uniform is used to flip the geometry upside-down when
+     the framebuffer requires it only when there are vertex
+     snippets. Otherwise this is acheived using the projection
+     matrix */
+  GLint flip_uniform;
+  int flushed_flip_state;
 
   UnitState *unit_state;
 } CoglPipelineProgramState;
@@ -150,7 +156,7 @@ get_program_state (CoglPipeline *pipeline)
   return cogl_object_get_user_data (COGL_OBJECT (pipeline), &program_state_key);
 }
 
-#ifdef HAVE_COGL_GLES2
+#define UNIFORM_LOCATION_UNKNOWN -2
 
 #define ATTRIBUTE_LOCATION_UNKNOWN -2
 
@@ -161,139 +167,73 @@ get_program_state (CoglPipeline *pipeline)
    cache. This should always be called after the pipeline is flushed
    so they can assert that the gl program is valid */
 
+/* All attributes names get internally mapped to a global set of
+ * sequential indices when they are setup which we need to need to
+ * then be able to map to a GL attribute location once we have
+ * a linked GLSL program */
+
 int
-_cogl_pipeline_progend_glsl_get_position_attribute (CoglPipeline *pipeline)
+_cogl_pipeline_progend_glsl_get_attrib_location (CoglPipeline *pipeline,
+                                                 int name_index)
 {
   CoglPipelineProgramState *program_state = get_program_state (pipeline);
+  int *locations;
 
   _COGL_GET_CONTEXT (ctx, -1);
 
-  g_return_val_if_fail (program_state != NULL, -1);
-  g_return_val_if_fail (program_state->program != 0, -1);
+  _COGL_RETURN_VAL_IF_FAIL (program_state != NULL, -1);
+  _COGL_RETURN_VAL_IF_FAIL (program_state->program != 0, -1);
 
-  if (program_state->position_attribute_location == ATTRIBUTE_LOCATION_UNKNOWN)
-    GE_RET( program_state->position_attribute_location,
-            ctx, glGetAttribLocation (program_state->program,
-                                      "cogl_position_in") );
+  if (G_UNLIKELY (program_state->attribute_locations == NULL))
+    program_state->attribute_locations =
+      g_array_new (FALSE, FALSE, sizeof (int));
 
-  return program_state->position_attribute_location;
-}
-
-int
-_cogl_pipeline_progend_glsl_get_color_attribute (CoglPipeline *pipeline)
-{
-  CoglPipelineProgramState *program_state = get_program_state (pipeline);
-
-  _COGL_GET_CONTEXT (ctx, -1);
-
-  g_return_val_if_fail (program_state != NULL, -1);
-  g_return_val_if_fail (program_state->program != 0, -1);
-
-  if (program_state->color_attribute_location == ATTRIBUTE_LOCATION_UNKNOWN)
-    GE_RET( program_state->color_attribute_location,
-            ctx, glGetAttribLocation (program_state->program,
-                                      "cogl_color_in") );
-
-  return program_state->color_attribute_location;
-}
-
-int
-_cogl_pipeline_progend_glsl_get_normal_attribute (CoglPipeline *pipeline)
-{
-  CoglPipelineProgramState *program_state = get_program_state (pipeline);
-
-  _COGL_GET_CONTEXT (ctx, -1);
-
-  g_return_val_if_fail (program_state != NULL, -1);
-  g_return_val_if_fail (program_state->program != 0, -1);
-
-  if (program_state->normal_attribute_location == ATTRIBUTE_LOCATION_UNKNOWN)
-    GE_RET( program_state->normal_attribute_location,
-            ctx, glGetAttribLocation (program_state->program,
-                                      "cogl_normal_in") );
-
-  return program_state->normal_attribute_location;
-}
-
-int
-_cogl_pipeline_progend_glsl_get_tex_coord_attribute (CoglPipeline *pipeline,
-                                                     int unit)
-{
-  CoglPipelineProgramState *program_state = get_program_state (pipeline);
-
-  _COGL_GET_CONTEXT (ctx, -1);
-
-  g_return_val_if_fail (program_state != NULL, -1);
-  g_return_val_if_fail (program_state->program != 0, -1);
-
-  if (unit == 0)
+  if (G_UNLIKELY (program_state->attribute_locations->len <= name_index))
     {
-      if (program_state->tex_coord0_attribute_location ==
-          ATTRIBUTE_LOCATION_UNKNOWN)
-        GE_RET( program_state->tex_coord0_attribute_location,
-                ctx, glGetAttribLocation (program_state->program,
-                                          "cogl_tex_coord0_in") );
-
-      return program_state->tex_coord0_attribute_location;
+      int i = program_state->attribute_locations->len;
+      g_array_set_size (program_state->attribute_locations, name_index + 1);
+      for (; i < program_state->attribute_locations->len; i++)
+        g_array_index (program_state->attribute_locations, int, i)
+          = ATTRIBUTE_LOCATION_UNKNOWN;
     }
-  else
+
+  locations = &g_array_index (program_state->attribute_locations, int, 0);
+
+  if (locations[name_index] == ATTRIBUTE_LOCATION_UNKNOWN)
     {
-      char *name = g_strdup_printf ("cogl_tex_coord%i_in", unit);
-      int *locations;
+      CoglAttributeNameState *name_state =
+        g_array_index (ctx->attribute_name_index_map,
+                       CoglAttributeNameState *, name_index);
 
-      if (program_state->tex_coord_attribute_locations == NULL)
-        program_state->tex_coord_attribute_locations =
-          g_array_new (FALSE, FALSE, sizeof (int));
-      if (program_state->tex_coord_attribute_locations->len <= unit - 1)
-        {
-          int i = program_state->tex_coord_attribute_locations->len;
-          g_array_set_size (program_state->tex_coord_attribute_locations, unit);
-          for (; i < unit; i++)
-            g_array_index (program_state->tex_coord_attribute_locations, int, i)
-              = ATTRIBUTE_LOCATION_UNKNOWN;
-        }
+      _COGL_RETURN_VAL_IF_FAIL (name_state != NULL, 0);
 
-      locations = &g_array_index (program_state->tex_coord_attribute_locations,
-                                  int, 0);
-
-      if (locations[unit - 1] == ATTRIBUTE_LOCATION_UNKNOWN)
-        GE_RET( locations[unit - 1],
-                ctx, glGetAttribLocation (program_state->program, name) );
-
-      g_free (name);
-
-      return locations[unit - 1];
+      GE_RET( locations[name_index],
+              ctx, glGetAttribLocation (program_state->program,
+                                        name_state->name) );
     }
+
+  return locations[name_index];
 }
 
 static void
 clear_attribute_cache (CoglPipelineProgramState *program_state)
 {
-  program_state->position_attribute_location = ATTRIBUTE_LOCATION_UNKNOWN;
-  program_state->color_attribute_location = ATTRIBUTE_LOCATION_UNKNOWN;
-  program_state->normal_attribute_location = ATTRIBUTE_LOCATION_UNKNOWN;
-  program_state->tex_coord0_attribute_location = ATTRIBUTE_LOCATION_UNKNOWN;
-  if (program_state->tex_coord_attribute_locations)
+  if (program_state->attribute_locations)
     {
-      g_array_free (program_state->tex_coord_attribute_locations, TRUE);
-      program_state->tex_coord_attribute_locations = NULL;
+      g_array_free (program_state->attribute_locations, TRUE);
+      program_state->attribute_locations = NULL;
     }
 }
+
+#ifdef HAVE_COGL_GLES2
 
 static void
 clear_flushed_matrix_stacks (CoglPipelineProgramState *program_state)
 {
-  if (program_state->flushed_modelview_stack)
-    {
-      cogl_object_unref (program_state->flushed_modelview_stack);
-      program_state->flushed_modelview_stack = NULL;
-    }
-  if (program_state->flushed_projection_stack)
-    {
-      cogl_object_unref (program_state->flushed_projection_stack);
-      program_state->flushed_projection_stack = NULL;
-    }
-  program_state->flushed_modelview_is_identity = FALSE;
+  _cogl_matrix_stack_destroy_cache (&program_state->projection_cache);
+  _cogl_matrix_stack_init_cache (&program_state->projection_cache);
+  _cogl_matrix_stack_destroy_cache (&program_state->modelview_cache);
+  _cogl_matrix_stack_init_cache (&program_state->modelview_cache);
 }
 
 #endif /* HAVE_COGL_GLES2 */
@@ -308,11 +248,11 @@ program_state_new (int n_layers)
   program_state->program = 0;
   program_state->n_tex_coord_attribs = 0;
   program_state->unit_state = g_new (UnitState, n_layers);
+  program_state->uniform_locations = NULL;
+  program_state->attribute_locations = NULL;
 #ifdef HAVE_COGL_GLES2
-  program_state->tex_coord_attribute_locations = NULL;
-  program_state->flushed_modelview_stack = NULL;
-  program_state->flushed_modelview_is_identity = FALSE;
-  program_state->flushed_projection_stack = NULL;
+  _cogl_matrix_stack_init_cache (&program_state->modelview_cache);
+  _cogl_matrix_stack_init_cache (&program_state->projection_cache);
 #endif
 
   return program_state;
@@ -335,11 +275,13 @@ destroy_program_state (void *user_data,
 
   if (--program_state->ref_count == 0)
     {
+      clear_attribute_cache (program_state);
+
 #ifdef HAVE_COGL_GLES2
       if (ctx->driver == COGL_DRIVER_GLES2)
         {
-          clear_attribute_cache (program_state);
-          clear_flushed_matrix_stacks (program_state);
+          _cogl_matrix_stack_destroy_cache (&program_state->projection_cache);
+          _cogl_matrix_stack_destroy_cache (&program_state->modelview_cache);
         }
 #endif
 
@@ -347,6 +289,9 @@ destroy_program_state (void *user_data,
         GE( ctx, glDeleteProgram (program_state->program) );
 
       g_free (program_state->unit_state);
+
+      if (program_state->uniform_locations)
+        g_array_free (program_state->uniform_locations, TRUE);
 
       g_slice_free (CoglPipelineProgramState, program_state);
     }
@@ -538,6 +483,167 @@ update_builtin_uniforms (CoglPipeline *pipeline,
 
 #endif /* HAVE_COGL_GLES2 */
 
+typedef struct
+{
+  CoglPipelineProgramState *program_state;
+  unsigned long *uniform_differences;
+  int n_differences;
+  CoglContext *ctx;
+  const CoglBoxedValue *values;
+  int value_index;
+} FlushUniformsClosure;
+
+static gboolean
+flush_uniform_cb (int uniform_num, void *user_data)
+{
+  FlushUniformsClosure *data = user_data;
+
+  if (COGL_FLAGS_GET (data->uniform_differences, uniform_num))
+    {
+      GArray *uniform_locations;
+      GLint uniform_location;
+
+      if (data->program_state->uniform_locations == NULL)
+        data->program_state->uniform_locations =
+          g_array_new (FALSE, FALSE, sizeof (GLint));
+
+      uniform_locations = data->program_state->uniform_locations;
+
+      if (uniform_locations->len <= uniform_num)
+        {
+          unsigned int old_len = uniform_locations->len;
+
+          g_array_set_size (uniform_locations, uniform_num + 1);
+
+          while (old_len <= uniform_num)
+            {
+              g_array_index (uniform_locations, GLint, old_len) =
+                UNIFORM_LOCATION_UNKNOWN;
+              old_len++;
+            }
+        }
+
+      uniform_location = g_array_index (uniform_locations, GLint, uniform_num);
+
+      if (uniform_location == UNIFORM_LOCATION_UNKNOWN)
+        {
+          const char *uniform_name =
+            g_ptr_array_index (data->ctx->uniform_names, uniform_num);
+
+          uniform_location =
+            data->ctx->glGetUniformLocation (data->program_state->program,
+                                             uniform_name);
+          g_array_index (uniform_locations, GLint, uniform_num) =
+            uniform_location;
+        }
+
+      if (uniform_location != -1)
+        _cogl_boxed_value_set_uniform (data->ctx,
+                                       uniform_location,
+                                       data->values + data->value_index);
+
+      data->n_differences--;
+      COGL_FLAGS_SET (data->uniform_differences, uniform_num, FALSE);
+    }
+
+  data->value_index++;
+
+  return data->n_differences > 0;
+}
+
+static void
+_cogl_pipeline_progend_glsl_flush_uniforms (CoglPipeline *pipeline,
+                                            CoglPipelineProgramState *
+                                                                  program_state,
+                                            GLuint gl_program,
+                                            gboolean program_changed)
+{
+  CoglPipelineUniformsState *uniforms_state;
+  FlushUniformsClosure data;
+  int n_uniform_longs;
+
+  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
+
+  if (pipeline->differences & COGL_PIPELINE_STATE_UNIFORMS)
+    uniforms_state = &pipeline->big_state->uniforms_state;
+  else
+    uniforms_state = NULL;
+
+  data.program_state = program_state;
+  data.ctx = ctx;
+
+  n_uniform_longs = COGL_FLAGS_N_LONGS_FOR_SIZE (ctx->n_uniform_names);
+
+  data.uniform_differences = g_newa (unsigned long, n_uniform_longs);
+
+  /* Try to find a common ancestor for the values that were already
+     flushed on the pipeline that this program state was last used for
+     so we can avoid flushing those */
+
+  if (program_changed || program_state->last_used_for_pipeline == NULL)
+    {
+      if (program_changed)
+        {
+          /* The program has changed so all of the uniform locations
+             are invalid */
+          if (program_state->uniform_locations)
+            g_array_set_size (program_state->uniform_locations, 0);
+        }
+
+      /* We need to flush everything so mark all of the uniforms as
+         dirty */
+      memset (data.uniform_differences, 0xff,
+              n_uniform_longs * sizeof (unsigned long));
+      data.n_differences = G_MAXINT;
+    }
+  else if (program_state->last_used_for_pipeline)
+    {
+      int i;
+
+      memset (data.uniform_differences, 0,
+              n_uniform_longs * sizeof (unsigned long));
+      _cogl_pipeline_compare_uniform_differences
+        (data.uniform_differences,
+         program_state->last_used_for_pipeline,
+         pipeline);
+
+      /* We need to be sure to flush any uniforms that have changed
+         since the last flush */
+      if (uniforms_state)
+        _cogl_bitmask_set_flags (&uniforms_state->changed_mask,
+                                 data.uniform_differences);
+
+      /* Count the number of differences. This is so we can stop early
+         when we've flushed all of them */
+      data.n_differences = 0;
+
+      for (i = 0; i < n_uniform_longs; i++)
+        data.n_differences +=
+          _cogl_util_popcountl (data.uniform_differences[i]);
+    }
+
+  while (pipeline && data.n_differences > 0)
+    {
+      if (pipeline->differences & COGL_PIPELINE_STATE_UNIFORMS)
+        {
+          const CoglPipelineUniformsState *parent_uniforms_state =
+            &pipeline->big_state->uniforms_state;
+
+          data.values = parent_uniforms_state->override_values;
+          data.value_index = 0;
+
+          _cogl_bitmask_foreach (&parent_uniforms_state->override_mask,
+                                 flush_uniform_cb,
+                                 &data);
+        }
+
+      pipeline = _cogl_pipeline_get_parent (pipeline);
+    }
+
+  if (uniforms_state)
+    _cogl_bitmask_clear_all (&uniforms_state->changed_mask);
+}
+
 static void
 _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
                                  unsigned long pipelines_difference,
@@ -619,11 +725,12 @@ _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
    * need to relink
    *
    * Also if the number of texture coordinate attributes in use has
-   * increased, then delete the program so we can prepend a new
+   * changed, then delete the program so we can prepend a new
    * _cogl_tex_coord[] varying array declaration. */
-  if (program_state->program && user_program &&
-      (user_program->age != program_state->user_program_age ||
-       n_tex_coord_attribs > program_state->n_tex_coord_attribs))
+  if ((program_state->program && user_program &&
+       user_program->age != program_state->user_program_age) ||
+      (ctx->driver == COGL_DRIVER_GLES2 &&
+       n_tex_coord_attribs != program_state->n_tex_coord_attribs))
     {
       GE( ctx, glDeleteProgram (program_state->program) );
       program_state->program = 0;
@@ -639,23 +746,6 @@ _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
       /* Attach all of the shader from the user program */
       if (user_program)
         {
-          if (program_state->n_tex_coord_attribs > n_tex_coord_attribs)
-            n_tex_coord_attribs = program_state->n_tex_coord_attribs;
-
-#ifdef HAVE_COGL_GLES2
-          /* Find the largest count of texture coordinate attributes
-           * associated with each of the shaders so we can ensure a consistent
-           * _cogl_tex_coord[] array declaration across all of the shaders.*/
-          if (ctx->driver == COGL_DRIVER_GLES2 &&
-              user_program)
-            for (l = user_program->attached_shaders; l; l = l->next)
-              {
-                CoglShader *shader = l->data;
-                n_tex_coord_attribs = MAX (shader->n_tex_coord_attribs,
-                                           n_tex_coord_attribs);
-              }
-#endif
-
           for (l = user_program->attached_shaders; l; l = l->next)
             {
               CoglShader *shader = l->data;
@@ -698,9 +788,16 @@ _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
   state.program_state = program_state;
 
   if (program_changed)
-    cogl_pipeline_foreach_layer (pipeline,
-                                 get_uniform_cb,
-                                 &state);
+    {
+      cogl_pipeline_foreach_layer (pipeline,
+                                   get_uniform_cb,
+                                   &state);
+      clear_attribute_cache (program_state);
+
+      GE_RET (program_state->flip_uniform,
+              ctx, glGetUniformLocation (gl_program, "_cogl_flip_vector"));
+      program_state->flushed_flip_state = -1;
+    }
 
   state.unit = 0;
   state.update_all = (program_changed ||
@@ -717,7 +814,6 @@ _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
         {
           int i;
 
-          clear_attribute_cache (program_state);
           clear_flushed_matrix_stacks (program_state);
 
           for (i = 0; i < G_N_ELEMENTS (builtin_uniforms); i++)
@@ -744,6 +840,11 @@ _cogl_pipeline_progend_glsl_end (CoglPipeline *pipeline,
       update_builtin_uniforms (pipeline, gl_program, program_state);
     }
 #endif
+
+  _cogl_pipeline_progend_glsl_flush_uniforms (pipeline,
+                                              program_state,
+                                              gl_program,
+                                              program_changed);
 
   if (user_program)
     _cogl_program_flush_uniforms (user_program,
@@ -826,173 +927,157 @@ _cogl_pipeline_progend_glsl_layer_pre_change_notify (
     }
 }
 
-#ifdef HAVE_COGL_GLES2
-
-static void
-flush_modelview_cb (gboolean is_identity,
-                    const CoglMatrix *matrix,
-                    void *user_data)
-{
-  CoglPipelineProgramState *program_state = user_data;
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  GE( ctx, glUniformMatrix4fv (program_state->modelview_uniform, 1, FALSE,
-                               cogl_matrix_get_array (matrix)) );
-}
-
-static void
-flush_projection_cb (gboolean is_identity,
-                    const CoglMatrix *matrix,
-                    void *user_data)
-{
-  CoglPipelineProgramState *program_state = user_data;
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  GE( ctx, glUniformMatrix4fv (program_state->projection_uniform, 1, FALSE,
-                               cogl_matrix_get_array (matrix)) );
-}
-
-typedef struct
-{
-  CoglPipelineProgramState *program_state;
-  const CoglMatrix *projection_matrix;
-} FlushCombinedData;
-
-static void
-flush_combined_step_two_cb (gboolean is_identity,
-                            const CoglMatrix *matrix,
-                            void *user_data)
-{
-  FlushCombinedData *data = user_data;
-  CoglMatrix mvp_matrix;
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  /* If the modelview is the identity then we can bypass the matrix
-     multiplication */
-  if (is_identity)
-    {
-      const float *array = cogl_matrix_get_array (data->projection_matrix);
-      GE( ctx, glUniformMatrix4fv (data->program_state->mvp_uniform,
-                                   1, FALSE, array ) );
-    }
-  else
-    {
-      cogl_matrix_multiply (&mvp_matrix,
-                            data->projection_matrix,
-                            matrix);
-
-      GE( ctx, glUniformMatrix4fv (data->program_state->mvp_uniform, 1, FALSE,
-                                   cogl_matrix_get_array (&mvp_matrix)) );
-    }
-}
-
-static void
-flush_combined_step_one_cb (gboolean is_identity,
-                            const CoglMatrix *matrix,
-                            void *user_data)
-{
-  FlushCombinedData data;
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  data.program_state = user_data;
-  data.projection_matrix = matrix;
-
-  _cogl_matrix_stack_prepare_for_flush (ctx->flushed_modelview_stack,
-                                        COGL_MATRIX_MODELVIEW,
-                                        flush_combined_step_two_cb,
-                                        &data);
-}
-
 static void
 _cogl_pipeline_progend_glsl_pre_paint (CoglPipeline *pipeline)
 {
-  CoglPipelineProgramState *program_state = get_program_state (pipeline);
-  gboolean modelview_changed;
-  gboolean projection_changed;
+  gboolean needs_flip;
+  CoglMatrixStack *projection_stack;
+  CoglMatrixStack *modelview_stack;
+  CoglPipelineProgramState *program_state;
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  if (ctx->driver != COGL_DRIVER_GLES2)
+  if (pipeline->vertend != COGL_PIPELINE_VERTEND_GLSL)
     return;
-
-  /* We only need to update the matrices if we're using the the GLSL
-     vertend, but this is a requirement on GLES2 anyway */
-  g_return_if_fail (pipeline->vertend == COGL_PIPELINE_VERTEND_GLSL);
 
   program_state = get_program_state (pipeline);
 
+  projection_stack = ctx->current_projection_stack;
+  modelview_stack = ctx->current_modelview_stack;
+
   /* An initial pipeline is flushed while creating the context. At
-     this point there are no matrices flushed so we can't do
+     this point there are no matrices selected so we can't do
      anything */
-  if (ctx->flushed_modelview_stack == NULL ||
-      ctx->flushed_projection_stack == NULL)
+  if (modelview_stack == NULL || projection_stack == NULL)
     return;
 
-  /* When flushing from the journal the modelview matrix is usually
-     the identity matrix so it makes sense to optimise this case by
-     specifically checking whether we already have the identity matrix
-     which will catch a lot of common cases of redundant flushing */
-  if (program_state->flushed_modelview_is_identity &&
-      _cogl_matrix_stack_has_identity_flag (ctx->flushed_modelview_stack))
-    modelview_changed = FALSE;
+  needs_flip = cogl_is_offscreen (cogl_get_draw_framebuffer ());
+
+#ifdef HAVE_COGL_GLES2
+  if (ctx->driver == COGL_DRIVER_GLES2)
+    {
+      gboolean modelview_changed;
+      gboolean projection_changed;
+      gboolean need_modelview;
+      gboolean need_projection;
+      CoglMatrix modelview, projection;
+
+      projection_changed =
+        _cogl_matrix_stack_check_and_update_cache (projection_stack,
+                                                   &program_state->
+                                                   projection_cache,
+                                                   needs_flip &&
+                                                   program_state->
+                                                   flip_uniform == -1);
+
+      modelview_changed =
+        _cogl_matrix_stack_check_and_update_cache (modelview_stack,
+                                                   &program_state->
+                                                   modelview_cache,
+                                                   /* never flip modelview */
+                                                   FALSE);
+
+      if (modelview_changed || projection_changed)
+        {
+          if (program_state->mvp_uniform != -1)
+            need_modelview = need_projection = TRUE;
+          else
+            {
+              need_projection = (program_state->projection_uniform != -1 &&
+                                 projection_changed);
+              need_modelview = (program_state->modelview_uniform != -1 &&
+                                modelview_changed);
+            }
+
+          if (need_modelview)
+            _cogl_matrix_stack_get (modelview_stack, &modelview);
+          if (need_projection)
+            {
+              if (needs_flip && program_state->flip_uniform == -1)
+                {
+                  CoglMatrix tmp_matrix;
+                  _cogl_matrix_stack_get (projection_stack, &tmp_matrix);
+                  cogl_matrix_multiply (&projection,
+                                        &ctx->y_flip_matrix,
+                                        &tmp_matrix);
+                }
+              else
+                _cogl_matrix_stack_get (projection_stack, &projection);
+            }
+
+          if (projection_changed && program_state->projection_uniform != -1)
+            GE (ctx, glUniformMatrix4fv (program_state->projection_uniform,
+                                         1, /* count */
+                                         FALSE, /* transpose */
+                                         cogl_matrix_get_array (&projection)));
+
+          if (modelview_changed && program_state->modelview_uniform != -1)
+            GE (ctx, glUniformMatrix4fv (program_state->modelview_uniform,
+                                         1, /* count */
+                                         FALSE, /* transpose */
+                                         cogl_matrix_get_array (&modelview)));
+
+          if (program_state->mvp_uniform != -1)
+            {
+              /* The journal usually uses an identity matrix for the
+                 modelview so we can optimise this common case by
+                 avoiding the matrix multiplication */
+              if (_cogl_matrix_stack_has_identity_flag (modelview_stack))
+                {
+                  GE (ctx,
+                      glUniformMatrix4fv (program_state->mvp_uniform,
+                                          1, /* count */
+                                          FALSE, /* transpose */
+                                          cogl_matrix_get_array (&projection)));
+                }
+              else
+                {
+                  CoglMatrix combined;
+
+                  cogl_matrix_multiply (&combined,
+                                        &projection,
+                                        &modelview);
+                  GE (ctx,
+                      glUniformMatrix4fv (program_state->mvp_uniform,
+                                          1, /* count */
+                                          FALSE, /* transpose */
+                                          cogl_matrix_get_array (&combined)));
+                }
+            }
+        }
+    }
   else
-    modelview_changed =
-      program_state->flushed_modelview_stack != ctx->flushed_modelview_stack ||
-      program_state->flushed_modelview_stack_age !=
-      _cogl_matrix_stack_get_age (program_state->flushed_modelview_stack);
-
-  projection_changed =
-    program_state->flushed_projection_stack != ctx->flushed_projection_stack ||
-    program_state->flushed_projection_stack_age !=
-    _cogl_matrix_stack_get_age (program_state->flushed_projection_stack);
-
-  if (modelview_changed)
+#endif
     {
-      cogl_object_ref (ctx->flushed_modelview_stack);
-      if (program_state->flushed_modelview_stack)
-        cogl_object_unref (program_state->flushed_modelview_stack);
-      program_state->flushed_modelview_stack = ctx->flushed_modelview_stack;
-      program_state->flushed_modelview_stack_age =
-        _cogl_matrix_stack_get_age (ctx->flushed_modelview_stack);
-      program_state->flushed_modelview_is_identity =
-        _cogl_matrix_stack_has_identity_flag (ctx->flushed_modelview_stack);
+      gboolean disable_flip;
 
-      if (program_state->modelview_uniform != -1)
-        _cogl_matrix_stack_prepare_for_flush (program_state
-                                              ->flushed_modelview_stack,
-                                              COGL_MATRIX_MODELVIEW,
-                                              flush_modelview_cb,
-                                              program_state);
+      /* If there are vertex snippets, then we'll disable flipping the
+         geometry via the matrix and use the flip vertex instead */
+      disable_flip = program_state->flip_uniform != -1;
+
+      _cogl_matrix_stack_flush_to_gl_builtins (ctx,
+                                               projection_stack,
+                                               COGL_MATRIX_PROJECTION,
+                                               disable_flip);
+      _cogl_matrix_stack_flush_to_gl_builtins (ctx,
+                                               modelview_stack,
+                                               COGL_MATRIX_MODELVIEW,
+                                               disable_flip);
     }
 
-  if (projection_changed)
+  if (program_state->flip_uniform != -1
+      && program_state->flushed_flip_state != needs_flip)
     {
-      cogl_object_ref (ctx->flushed_projection_stack);
-      if (program_state->flushed_projection_stack)
-        cogl_object_unref (program_state->flushed_projection_stack);
-      program_state->flushed_projection_stack = ctx->flushed_projection_stack;
-      program_state->flushed_projection_stack_age =
-        _cogl_matrix_stack_get_age (ctx->flushed_projection_stack);
-
-      if (program_state->projection_uniform != -1)
-        _cogl_matrix_stack_prepare_for_flush (program_state
-                                              ->flushed_projection_stack,
-                                              COGL_MATRIX_PROJECTION,
-                                              flush_projection_cb,
-                                              program_state);
+      static const float do_flip[4] = { 1.0f, -1.0f, 1.0f, 1.0f };
+      static const float dont_flip[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+      GE( ctx, glUniform4fv (program_state->flip_uniform,
+                             1, /* count */
+                             needs_flip ? do_flip : dont_flip) );
+      program_state->flushed_flip_state = needs_flip;
     }
-
-  if (program_state->mvp_uniform != -1 &&
-      (modelview_changed || projection_changed))
-    _cogl_matrix_stack_prepare_for_flush (ctx->flushed_projection_stack,
-                                          COGL_MATRIX_PROJECTION,
-                                          flush_combined_step_one_cb,
-                                          program_state);
 }
+
+#ifdef HAVE_COGL_GLES2
 
 static void
 update_float_uniform (CoglPipeline *pipeline,
@@ -1015,12 +1100,7 @@ const CoglPipelineProgend _cogl_pipeline_glsl_progend =
     _cogl_pipeline_progend_glsl_end,
     _cogl_pipeline_progend_glsl_pre_change_notify,
     _cogl_pipeline_progend_glsl_layer_pre_change_notify,
-#ifdef HAVE_COGL_GLES2
     _cogl_pipeline_progend_glsl_pre_paint
-#else
-    NULL
-#endif
   };
 
 #endif /* COGL_PIPELINE_PROGEND_GLSL */
-

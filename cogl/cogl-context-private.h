@@ -63,7 +63,8 @@ struct _CoglContext
   const CoglTextureDriver *texture_driver;
 
   /* Features cache */
-  CoglFeatureFlags feature_flags;
+  unsigned long features[COGL_FLAGS_N_LONGS_FOR_SIZE (_COGL_N_FEATURE_IDS)];
+  CoglFeatureFlags feature_flags; /* legacy/deprecated feature flags */
   CoglPrivateFeatureFlags private_feature_flags;
 
   CoglHandle        default_pipeline;
@@ -71,8 +72,21 @@ struct _CoglContext
   CoglHandle        default_layer_n;
   CoglHandle        dummy_layer_dependant;
 
-  /* Enable cache */
-  unsigned long     enable_flags;
+  GHashTable *attribute_name_states_hash;
+  GArray *attribute_name_index_map;
+  int n_attribute_names;
+
+  CoglBitmask       enabled_builtin_attributes;
+  CoglBitmask       enabled_texcoord_attributes;
+  CoglBitmask       enabled_custom_attributes;
+
+  /* These are temporary bitmasks that are used when disabling
+   * builtin,texcoord and custom attribute arrays. They are here just
+   * to avoid allocating new ones each time */
+  CoglBitmask       enable_builtin_attributes_tmp;
+  CoglBitmask       enable_texcoord_attributes_tmp;
+  CoglBitmask       enable_custom_attributes_tmp;
+  CoglBitmask       changed_bits_tmp;
 
   gboolean          legacy_backface_culling_enabled;
 
@@ -80,16 +94,18 @@ struct _CoglContext
   CoglMatrix        identity_matrix;
   CoglMatrix        y_flip_matrix;
 
-  /* Client-side matrix stack or NULL if none */
+  /* Value that was last used when calling glMatrixMode to avoid
+     calling it multiple times */
   CoglMatrixMode    flushed_matrix_mode;
 
-  /* On GLES2 we need to track the matrices separately because the are
-     stored in GLSL uniforms rather than using the fixed function
-     API. We keep track of the matrix stack that Cogl is trying to
-     flush so we can flush it later after the program is generated. A
-     reference is taken on the stacks. */
-  CoglMatrixStack  *flushed_modelview_stack;
-  CoglMatrixStack  *flushed_projection_stack;
+  /* The matrix stack that should be used for the next render */
+  CoglMatrixStack  *current_projection_stack;
+  CoglMatrixStack  *current_modelview_stack;
+
+  /* The last matrix stack with age that was flushed to the GL matrix
+     builtins */
+  CoglMatrixStackCache builtin_flushed_projection;
+  CoglMatrixStackCache builtin_flushed_modelview;
 
   GArray           *texture_units;
   int               active_texture_unit;
@@ -128,16 +144,6 @@ struct _CoglContext
   gboolean          current_pipeline_skip_gl_color;
   unsigned long     current_pipeline_age;
 
-  /* Bitmask of attributes enabled. On GLES2 these are the vertex
-     attribute numbers and on regular GL these are only used for the
-     texture coordinate arrays */
-  CoglBitmask       arrays_enabled;
-  /* These are temporary bitmasks that are used when disabling
-     texcoord arrays. They are here just to avoid allocating new ones
-     each time */
-  CoglBitmask       arrays_to_change;
-  CoglBitmask       temp_bitmask;
-
   gboolean          gl_blend_enable_cache;
 
   gboolean              depth_test_enabled_cache;
@@ -155,8 +161,10 @@ struct _CoglContext
   /* Framebuffers */
   GSList           *framebuffer_stack;
   CoglHandle        window_buffer;
-  gboolean          dirty_bound_framebuffer;
-  gboolean          dirty_gl_viewport;
+  unsigned long     current_draw_buffer_state_flushed;
+  unsigned long     current_draw_buffer_changes;
+  CoglFramebuffer  *current_draw_buffer;
+  CoglFramebuffer  *current_read_buffer;
 
   /* Primitives */
   CoglPath         *current_path;
@@ -253,9 +261,21 @@ struct _CoglContext
   CoglXlibTrapState *trap_state;
 #endif
 
-  unsigned int winsys_features
-    [COGL_FLAGS_N_INTS_FOR_SIZE (COGL_WINSYS_FEATURE_N_FEATURES)];
+  unsigned long winsys_features
+    [COGL_FLAGS_N_LONGS_FOR_SIZE (COGL_WINSYS_FEATURE_N_FEATURES)];
   void *winsys;
+
+  /* Array of names of uniforms. These are used like quarks to give a
+     unique number to each uniform name except that we ensure that
+     they increase sequentially so that we can use the id as an index
+     into a bitfield representing the uniforms that a pipeline
+     overrides from its parent. */
+  GPtrArray *uniform_names;
+  /* A hash table to quickly get an index given an existing name. The
+     name strings are owned by the uniform_names array. The values are
+     the uniform location cast to a pointer. */
+  GHashTable *uniform_name_hash;
+  int n_uniform_names;
 
   /* This defines a list of function pointers that Cogl uses from
      either GL or GLES. All functions are accessed indirectly through
@@ -272,7 +292,7 @@ struct _CoglContext
   ret (APIENTRY * name) args;
 #define COGL_EXT_END()
 
-#include "cogl-ext-functions.h"
+#include "gl-prototypes/cogl-all-functions.h"
 
 #undef COGL_EXT_BEGIN
 #undef COGL_EXT_FUNCTION
@@ -301,5 +321,13 @@ CoglContext *ctxvar = _cogl_context_get_default (); \
 if (ctxvar == NULL) return retval;
 
 #define NO_RETVAL
+
+void
+_cogl_context_set_current_projection (CoglContext *context,
+                                      CoglMatrixStack *stack);
+
+void
+_cogl_context_set_current_modelview (CoglContext *context,
+                                     CoglMatrixStack *stack);
 
 #endif /* __COGL_CONTEXT_PRIVATE_H */

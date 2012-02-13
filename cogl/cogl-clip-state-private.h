@@ -40,15 +40,17 @@ _cogl_clip_state_init (CoglClipState *state);
 void
 _cogl_clip_state_destroy (CoglClipState *state);
 
-void
-_cogl_clip_state_flush (CoglClipState *clip_state,
-                        CoglFramebuffer *framebuffer);
-
 CoglClipStack *
 _cogl_clip_state_get_stack (CoglClipState *clip_state);
 
 void
 _cogl_clip_state_set_stack (CoglClipState *clip_state,
                             CoglClipStack *clip_stack);
+
+void
+_cogl_clip_state_save_clip_stack (CoglClipState *clip_state);
+
+void
+_cogl_clip_state_restore_clip_stack (CoglClipState *clip_state);
 
 #endif /* __COGL_CLIP_STATE_PRIVATE_H */

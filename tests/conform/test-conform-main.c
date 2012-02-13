@@ -137,7 +137,7 @@ main (int argc, char **argv)
   ADD_TEST ("/cogl", test_cogl_blend_strings);
   UNPORTED_TEST ("/cogl", test_cogl_premult);
   UNPORTED_TEST ("/cogl", test_cogl_readpixels);
-  UNPORTED_TEST ("/cogl", test_cogl_path);
+  ADD_TEST ("/cogl", test_cogl_path);
   ADD_TEST ("/cogl", test_cogl_depth_test);
   ADD_TEST ("/cogl", test_cogl_color_mask);
   ADD_TEST ("/cogl", test_cogl_backface_culling);
@@ -145,11 +145,11 @@ main (int argc, char **argv)
   UNPORTED_TEST ("/cogl/texture", test_cogl_npot_texture);
   UNPORTED_TEST ("/cogl/texture", test_cogl_multitexture);
   UNPORTED_TEST ("/cogl/texture", test_cogl_texture_mipmaps);
-  UNPORTED_TEST ("/cogl/texture", test_cogl_sub_texture);
+  ADD_TEST ("/cogl/texture", test_cogl_sub_texture);
   UNPORTED_TEST ("/cogl/texture", test_cogl_pixel_array);
   UNPORTED_TEST ("/cogl/texture", test_cogl_texture_rectangle);
   UNPORTED_TEST ("/cogl/texture", test_cogl_texture_3d);
-  UNPORTED_TEST ("/cogl/texture", test_cogl_wrap_modes);
+  ADD_TEST ("/cogl/texture", test_cogl_wrap_modes);
   UNPORTED_TEST ("/cogl/texture", test_cogl_texture_pixmap_x11);
   UNPORTED_TEST ("/cogl/texture", test_cogl_texture_get_set_data);
   UNPORTED_TEST ("/cogl/texture", test_cogl_atlas_migration);
@@ -158,14 +158,20 @@ main (int argc, char **argv)
   UNPORTED_TEST ("/cogl/vertex-buffer", test_cogl_vertex_buffer_interleved);
   UNPORTED_TEST ("/cogl/vertex-buffer", test_cogl_vertex_buffer_mutability);
 
-  UNPORTED_TEST ("/cogl/vertex-array", test_cogl_primitive);
+  ADD_TEST ("/cogl/vertex-array", test_cogl_primitive);
 
   ADD_TEST ("/cogl/shaders", test_cogl_just_vertex_shader);
+  ADD_TEST ("/cogl/shaders", test_cogl_pipeline_uniforms);
+  ADD_TEST ("/cogl/shaders", test_cogl_snippets);
+  ADD_TEST ("/cogl/shaders", test_cogl_custom_attributes);
+
+  ADD_TEST ("/cogl/internal/bitmask", test_cogl_bitmask);
+
+  ADD_TEST ("/cogl", test_cogl_offscreen);
 
   /* left to the end because they aren't currently very orthogonal and tend to
    * break subsequent tests! */
   UNPORTED_TEST ("/cogl", test_cogl_viewport);
-  UNPORTED_TEST ("/cogl", test_cogl_offscreen);
 
   return g_test_run ();
 }

@@ -73,10 +73,15 @@ cogl_public_h = \
 	$(srcdir)/cogl-primitives.h 		\
 	$(srcdir)/cogl-path.h 			\
 	$(srcdir)/cogl-pixel-buffer.h		\
+	$(srcdir)/cogl-poll.h			\
 	$(srcdir)/cogl-shader.h 		\
 	$(srcdir)/cogl-texture.h 		\
 	$(srcdir)/cogl-texture-3d.h             \
 	$(srcdir)/cogl-texture-2d.h             \
+	$(srcdir)/cogl-texture-rectangle.h      \
+	$(srcdir)/cogl-texture-2d-sliced.h      \
+	$(srcdir)/cogl-sub-texture.h            \
+	$(srcdir)/cogl-meta-texture.h		\
 	$(srcdir)/cogl-types.h 			\
 	$(srcdir)/cogl-vertex-buffer.h 		\
 	$(srcdir)/cogl-index-buffer.h 		\
@@ -86,6 +91,7 @@ cogl_public_h = \
 	$(srcdir)/cogl-primitive.h 		\
 	$(srcdir)/cogl-clip-state.h		\
 	$(srcdir)/cogl-framebuffer.h		\
+	$(srcdir)/cogl-onscreen.h		\
 	$(srcdir)/cogl-clutter.h       		\
 	$(srcdir)/cogl.h			\
 	$(NULL)
@@ -99,6 +105,7 @@ cogl_experimental_h = \
 	$(srcdir)/cogl-pipeline.h 		\
 	$(srcdir)/cogl-pipeline-state.h 	\
 	$(srcdir)/cogl-pipeline-layer-state.h 	\
+	$(srcdir)/cogl-snippet.h		\
 	$(srcdir)/cogl2-path.h 			\
 	$(srcdir)/cogl2-clip-state.h		\
 	$(srcdir)/cogl2-experimental.h		\
@@ -210,7 +217,6 @@ cogl_sources_c = \
 	$(srcdir)/cogl-clip-state.c			\
 	$(srcdir)/cogl2-clip-state.h 			\
 	$(srcdir)/cogl2-clip-state.c 			\
-	$(srcdir)/cogl-ext-functions.h			\
 	$(srcdir)/cogl-feature-private.h                \
 	$(srcdir)/cogl-feature-private.c                \
 	$(srcdir)/cogl-fixed.c		    		\
@@ -265,8 +271,12 @@ cogl_sources_c = \
 	$(srcdir)/cogl-pipeline-vertend-glsl-private.h	\
 	$(srcdir)/cogl-pipeline-vertend-fixed.c		\
 	$(srcdir)/cogl-pipeline-vertend-fixed-private.h	\
+	$(srcdir)/cogl-pipeline-progend-fixed.c		\
+	$(srcdir)/cogl-pipeline-progend-fixed-private.h	\
 	$(srcdir)/cogl-pipeline-progend-glsl.c		\
 	$(srcdir)/cogl-pipeline-progend-glsl-private.h	\
+	$(srcdir)/cogl-pipeline-snippet-private.h	\
+	$(srcdir)/cogl-pipeline-snippet.c		\
 	$(srcdir)/cogl-pipeline-cache.h			\
 	$(srcdir)/cogl-pipeline-cache.c			\
 	$(srcdir)/cogl-material-compat.c		\
@@ -294,6 +304,7 @@ cogl_sources_c = \
 	$(srcdir)/cogl-atlas.c                          \
 	$(srcdir)/cogl-atlas-texture-private.h          \
 	$(srcdir)/cogl-atlas-texture.c                  \
+	$(srcdir)/cogl-meta-texture.c			\
 	$(srcdir)/cogl-blit.h				\
 	$(srcdir)/cogl-blit.c				\
 	$(srcdir)/cogl-spans.h				\
@@ -302,6 +313,8 @@ cogl_sources_c = \
 	$(srcdir)/cogl-journal.c			\
 	$(srcdir)/cogl-framebuffer-private.h		\
 	$(srcdir)/cogl-framebuffer.c 			\
+	$(srcdir)/cogl-onscreen-private.h		\
+	$(srcdir)/cogl-onscreen.c 			\
 	$(srcdir)/cogl-profile.h 			\
 	$(srcdir)/cogl-profile.c 			\
 	$(srcdir)/cogl-flags.h				\
@@ -319,10 +332,32 @@ cogl_sources_c = \
 	$(srcdir)/winsys/cogl-winsys-stub.c		\
 	$(srcdir)/cogl-config-private.h			\
 	$(srcdir)/cogl-config.c				\
+	$(srcdir)/cogl-boxed-value.h			\
+	$(srcdir)/cogl-boxed-value.c			\
+	$(srcdir)/cogl-snippet-private.h		\
+	$(srcdir)/cogl-snippet.c			\
+	$(srcdir)/cogl-poll.c				\
+	$(srcdir)/gl-prototypes/cogl-all-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-gles1-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-gles2-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-core-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-in-gles-core-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-in-gles1-core-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-in-gles2-core-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-fixed-functions.h	\
+	$(srcdir)/gl-prototypes/cogl-glsl-functions.h	\
 	$(NULL)
+
+if USE_GLIB
+cogl_public_h += \
+	$(srcdir)/cogl-glib-source.h
+cogl_sources_c += \
+	$(srcdir)/cogl-glib-source.c
+endif
 
 if SUPPORT_XLIB
 cogl_public_h += \
+	$(srcdir)/cogl-clutter-xlib.h \
 	$(srcdir)/cogl-xlib-renderer.h
 
 cogl_experimental_h += \
@@ -333,7 +368,6 @@ cogl_sources_c += \
 	$(srcdir)/cogl-x11-renderer-private.h \
 	$(srcdir)/cogl-xlib-renderer-private.h \
 	$(srcdir)/cogl-xlib-renderer.c \
-	$(srcdir)/cogl-xlib-display-private.h \
 	$(srcdir)/cogl-xlib.c \
 	$(srcdir)/cogl-xlib-private.h \
 	$(srcdir)/winsys/cogl-texture-pixmap-x11.c \
@@ -358,12 +392,46 @@ endif
 if SUPPORT_EGL_PLATFORM_WAYLAND
 cogl_public_h += \
 	$(srcdir)/cogl-wayland-renderer.h
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-wayland.c \
+	$(srcdir)/winsys/cogl-winsys-egl-wayland-private.h
+endif
+if SUPPORT_EGL_PLATFORM_KMS
+cogl_public_h += \
+	$(srcdir)/cogl-kms-renderer.h
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-kms.c \
+	$(srcdir)/winsys/cogl-winsys-egl-kms-private.h
+endif
+if SUPPORT_EGL_PLATFORM_XLIB
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-x11.c \
+	$(srcdir)/winsys/cogl-winsys-egl-x11-private.h
+endif
+if SUPPORT_EGL_PLATFORM_POWERVR_NULL
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-null.c \
+	$(srcdir)/winsys/cogl-winsys-egl-null-private.h
+endif
+if SUPPORT_EGL_PLATFORM_GDL
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-gdl.c \
+	$(srcdir)/winsys/cogl-winsys-egl-gdl-private.h
+endif
+if SUPPORT_EGL_PLATFORM_ANDROID
+cogl_sources_c += \
+	$(srcdir)/winsys/cogl-winsys-egl-android.c \
+	$(srcdir)/winsys/cogl-winsys-egl-android-private.h
 endif
 if SUPPORT_EGL
 cogl_sources_c += \
        $(srcdir)/winsys/cogl-winsys-egl.c \
        $(srcdir)/winsys/cogl-winsys-egl-feature-functions.h \
        $(srcdir)/winsys/cogl-winsys-egl-private.h
+endif
+if SUPPORT_SDL
+cogl_sources_c += \
+       $(srcdir)/winsys/cogl-winsys-sdl.c
 endif
 
 EXTRA_DIST += stb_image.c
@@ -401,6 +469,91 @@ cogl_headers = \
 coglincludedir = $(includedir)/cogl/cogl
 coglinclude_HEADERS = $(cogl_headers) $(cogl_experimental_h)
 nodist_coglinclude_HEADERS = cogl-defines.h cogl-enum-types.h
+
+dist-hook: ../build/win32/vs9/cogl.vcproj ../build/win32/vs10/cogl.vcxproj ../build/win32/vs10/cogl.vcxproj.filters ../build/win32/gen-enums.bat
+
+# I know those filters below don't look nice, but this is to ensure the right files are in the Project files only *once*
+../build/win32/vs9/cogl.vcproj: $(top_srcdir)/build/win32/vs9/cogl.vcprojin
+	for F in `echo $(cogl_sources_c) $(BUILT_SOURCES) | tr '/' '\\'`; do \
+		case $$F in \
+		*-egl.c|*-glx.c|*-xlib*.c|*-x11.c|*.wgl.c|*-gl.c|*-gles.c|*-kms.c|*-sdl.c|*.h) ;; \
+		*.c)	echo '   <File RelativePath="..\..\..\cogl\'$$F'" />' \
+			;; \
+		esac; \
+	done >cogl.sourcefiles
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs9/cogl.vcprojin >$@
+	rm cogl.sourcefiles
+
+../build/win32/vs10/cogl.vcxproj: $(top_srcdir)/build/win32/vs10/cogl.vcxprojin
+	for F in `echo $(cogl_sources_c) $(BUILT_SOURCES) | tr '/' '\\'`; do \
+		case $$F in \
+		*-egl.c|*-glx.c|*-xlib*.c|*-x11.c|*.wgl.c|*-gl.c|*-gles.c|*-kms.c|*-sdl.c|*.h) ;; \
+		*.c)	echo '    <ClCompile Include="..\..\..\cogl\'$$F'" />' \
+			;; \
+		esac; \
+	done >cogl.vs10.sourcefiles
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/cogl.vcxprojin >$@
+	rm cogl.vs10.sourcefiles
+
+../build/win32/vs10/cogl.vcxproj.filters: $(top_srcdir)/build/win32/vs10/cogl.vcxproj.filtersin
+	for F in `echo $(cogl_sources_c) $(BUILT_SOURCES) | tr '/' '\\'`; do \
+		case $$F in \
+		*-egl.c|*-glx.c|*-xlib*.c|*-x11.c|*.wgl.c|*-gl.c|*-gles.c|*-kms.c|*-sdl.c|*.h) ;; \
+		*.c)	echo '    <ClCompile Include="..\..\..\cogl\'$$F'"><Filter>Sources</Filter></ClCompile>' \
+			;; \
+		esac; \
+	done >cogl.vs10.sourcefiles.filters
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/cogl.vcxproj.filtersin >$@
+	rm cogl.vs10.sourcefiles.filters
+
+cogl.vsenums_h:
+	echo 'perl %1\bin\glib-mkenums --template ../../cogl/cogl-enum-types.h.in ' >vsenums_h.temp1
+	for F in `echo $(cogl_public_h) $(srcdir)/cogl-win32-renderer.h`; do \
+		case $$F in \
+		*xlib*.h|*wayland*.h) ;; \
+		*.h) echo '../../cogl'$$F' '	\
+			;;	\
+		esac;	\
+	done >>vsenums_h.temp1
+	cat vsenums_h.temp1 | sed 's_/cogl./_/cogl/_' >vsenums_h.temp
+	cat vsenums_h.temp | tr -d '\n' >>$@
+	echo '> ..\..\cogl\cogl-enum-types.h' >>$@
+	rm vsenums_h.temp1
+	rm vsenums_h.temp
+
+cogl.vsenums_c:
+	echo 'perl %1\bin\glib-mkenums --template ../../cogl/cogl-enum-types.c.in ' >vsenums_c.temp1
+	for F in `echo $(cogl_public_h) $(srcdir)/cogl-win32-renderer.h`; do \
+		case $$F in \
+		*xlib*.h|*wayland*.h) ;; \
+		*.h) echo '../../cogl'$$F' '	\
+			;;	\
+		esac;	\
+	done >>vsenums_c.temp1
+	cat vsenums_c.temp1 | sed 's_/cogl./_/cogl/_' >vsenums_c.temp
+	cat vsenums_c.temp | tr -d '\n' >>$@
+	echo '> ..\..\cogl\cogl-enum-types.c' >>$@
+	rm vsenums_c.temp1
+	rm vsenums_c.temp
+
+../build/win32/gen-enums.bat: cogl.vsenums_h cogl.vsenums_c
+	echo 'if exist ..\..\cogl\cogl-enum-types.h goto DONE_COGL_ENUMS_H' >$@
+	cat cogl.vsenums_h >>$@
+	echo ':DONE_COGL_ENUMS_H' >>$@
+	echo 'if exist ..\..\cogl\cogl-enum-types.c goto DONE_COGL_ENUMS_C' >>$@
+	cat cogl.vsenums_c >>$@
+	echo ':DONE_COGL_ENUMS_C' >>$@
+	rm cogl.vsenums_h
+	rm cogl.vsenums_c
+
+EXTRA_DIST += \
+	cogl-defines.h.win32	\
+	cogl-defines.h.win32_SDL	\
+	cogl.symbols	\
+	cogl.rc.in	\
+	cogl.rc
+
+DISTCLEANFILES += ../build/win32/vs9/cogl.vcproj ../build/win32/vs10/cogl.vcxproj ../build/win32/vs10/cogl.vcxproj.filters ../build/win32/gen-enums.bat cogl.rc
 
 -include $(INTROSPECTION_MAKEFILE)
 

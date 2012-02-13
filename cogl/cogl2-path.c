@@ -31,6 +31,7 @@
 #endif
 
 #include "cogl.h"
+#include "cogl-util.h"
 #include "cogl-object.h"
 #include "cogl-internal.h"
 #include "cogl-context-private.h"
@@ -133,7 +134,7 @@ void
 cogl2_path_set_fill_rule (CoglPath *path,
                           CoglPathFillRule fill_rule)
 {
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   if (path->data->fill_rule != fill_rule)
     {
@@ -146,7 +147,7 @@ cogl2_path_set_fill_rule (CoglPath *path,
 CoglPathFillRule
 cogl2_path_get_fill_rule (CoglPath *path)
 {
-  g_return_val_if_fail (cogl_is_path (path), COGL_PATH_FILL_RULE_NON_ZERO);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_path (path), COGL_PATH_FILL_RULE_NON_ZERO);
 
   return path->data->fill_rule;
 }
@@ -229,10 +230,12 @@ _cogl_path_stroke_nodes (CoglPath *path)
     {
       node = &g_array_index (data->path_nodes, CoglPathNode, path_start);
 
-      cogl_vdraw_attributes (COGL_VERTICES_MODE_LINE_STRIP,
-                             0, node->path_size,
-                             data->stroke_attributes[path_num],
-                             NULL);
+      cogl_framebuffer_vdraw_attributes (cogl_get_draw_framebuffer (),
+                                         source,
+                                         COGL_VERTICES_MODE_LINE_STRIP,
+                                         0, node->path_size,
+                                         data->stroke_attributes[path_num],
+                                         NULL);
 
       path_num++;
     }
@@ -269,197 +272,85 @@ _cogl_path_get_bounds (CoglPath *path,
 }
 
 static void
-_cogl_path_fill_nodes_with_stencil_buffer (CoglPath *path)
+_cogl_path_fill_nodes_with_clipped_rectangle (CoglPath *path)
 {
+  CoglFramebuffer *fb;
+
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
-  g_assert (ctx->current_clip_stack_valid);
+  if (!(ctx->private_feature_flags & COGL_PRIVATE_FEATURE_STENCIL_BUFFER))
+    {
+      static gboolean seen_warning = FALSE;
 
-  _cogl_add_path_to_stencil_buffer (path,
-                                    ctx->current_clip_stack_uses_stencil,
-                                    FALSE);
+      if (!seen_warning)
+        {
+          g_warning ("Paths can not be filled using materials with "
+                     "sliced textures unless there is a stencil "
+                     "buffer");
+          seen_warning = TRUE;
+        }
+    }
 
-  _cogl_rectangle_immediate (path->data->path_nodes_min.x,
-                             path->data->path_nodes_min.y,
-                             path->data->path_nodes_max.x,
-                             path->data->path_nodes_max.y);
-
-  /* The stencil buffer now contains garbage so the clip area needs to
-   * be rebuilt.
-   *
-   * NB: We only ever try and update the clip state during
-   * _cogl_journal_init (when we flush the framebuffer state) which is
-   * only called when the journal first gets something logged in it; so
-   * we call cogl_flush() to emtpy the journal.
-   */
-  _cogl_clip_stack_dirty ();
+  fb = cogl_get_draw_framebuffer ();
+  cogl_framebuffer_push_path_clip (fb, path);
+  cogl_rectangle (path->data->path_nodes_min.x,
+                  path->data->path_nodes_min.y,
+                  path->data->path_nodes_max.x,
+                  path->data->path_nodes_max.y);
+  cogl_framebuffer_pop_clip (fb);
 }
 
-static void
-_cogl_path_fill_nodes (CoglPath *path)
+static gboolean
+validate_layer_cb (CoglPipelineLayer *layer, void *user_data)
 {
-  const GList *l;
+  gboolean *needs_fallback = user_data;
+  CoglTexture *texture = _cogl_pipeline_layer_get_texture (layer);
 
   /* If any of the layers of the current pipeline contain sliced
-     textures or textures with waste then it won't work to draw the
-     path directly. Instead we can use draw the texture as a quad
-     clipped to the stencil buffer. */
-  for (l = _cogl_pipeline_get_layers (cogl_get_source ()); l; l = l->next)
+   * textures or textures with waste then it won't work to draw the
+   * path directly. Instead we fallback to pushing the path as a clip
+   * on the clip-stack and drawing the path's bounding rectangle
+   * instead.
+   */
+
+  if (texture != NULL && (cogl_texture_is_sliced (texture) ||
+                          !_cogl_texture_can_hardware_repeat (texture)))
+    *needs_fallback = TRUE;
+
+  return !*needs_fallback;
+}
+
+void
+_cogl_path_fill_nodes (CoglPath *path, CoglDrawFlags flags)
+{
+  gboolean needs_fallback = FALSE;
+  CoglPipeline *pipeline = cogl_get_source ();
+
+  _cogl_pipeline_foreach_layer_internal (pipeline,
+                                         validate_layer_cb, &needs_fallback);
+  if (needs_fallback)
     {
-      CoglHandle layer = l->data;
-      CoglTexture *texture = _cogl_pipeline_layer_get_texture (layer);
-
-      if (texture != NULL &&
-          (cogl_texture_is_sliced (texture) ||
-           !_cogl_texture_can_hardware_repeat (texture)))
-        {
-          if (cogl_features_available (COGL_FEATURE_STENCIL_BUFFER))
-            _cogl_path_fill_nodes_with_stencil_buffer (path);
-          else
-            {
-              static gboolean seen_warning = FALSE;
-
-              if (!seen_warning)
-                {
-                  g_warning ("Paths can not be filled using materials with "
-                             "sliced textures unless there is a stencil "
-                             "buffer");
-                  seen_warning = TRUE;
-                }
-            }
-
-          return;
-        }
+      _cogl_path_fill_nodes_with_clipped_rectangle (path);
+      return;
     }
 
   _cogl_path_build_fill_attribute_buffer (path);
 
-  _cogl_draw_indexed_attributes (COGL_VERTICES_MODE_TRIANGLES,
-                                 0, /* first_vertex */
-                                 path->data->fill_vbo_n_indices,
-                                 path->data->fill_vbo_indices,
-                                 path->data->fill_attributes,
-                                 COGL_PATH_N_ATTRIBUTES,
-                                 COGL_DRAW_SKIP_JOURNAL_FLUSH |
-                                 COGL_DRAW_SKIP_PIPELINE_VALIDATION |
-                                 COGL_DRAW_SKIP_FRAMEBUFFER_FLUSH);
-}
-
-void
-_cogl_add_path_to_stencil_buffer (CoglPath *path,
-                                  gboolean merge,
-                                  gboolean need_clear)
-{
-  CoglPathData *data = path->data;
-  CoglFramebuffer *framebuffer = cogl_get_draw_framebuffer ();
-  CoglMatrixStack *modelview_stack =
-    _cogl_framebuffer_get_modelview_stack (framebuffer);
-  CoglMatrixStack *projection_stack =
-    _cogl_framebuffer_get_projection_stack (framebuffer);
-
-  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
-
-  /* This can be called from the clip stack code which doesn't flush
-     the matrix stacks between calls so we need to ensure they're
-     flushed now */
-  _cogl_matrix_stack_flush_to_gl (modelview_stack,
-                                  COGL_MATRIX_MODELVIEW);
-  _cogl_matrix_stack_flush_to_gl (projection_stack,
-                                  COGL_MATRIX_PROJECTION);
-
-  /* Just setup a simple pipeline that doesn't use texturing... */
-  _cogl_push_source (ctx->stencil_pipeline, FALSE);
-
-  _cogl_pipeline_flush_gl_state (ctx->stencil_pipeline, FALSE, 0);
-
-  GE( ctx, glEnable (GL_STENCIL_TEST) );
-
-  GE( ctx, glColorMask (FALSE, FALSE, FALSE, FALSE) );
-  GE( ctx, glDepthMask (FALSE) );
-
-  if (merge)
-    {
-      GE (ctx, glStencilMask (2));
-      GE (ctx, glStencilFunc (GL_LEQUAL, 0x2, 0x6));
-    }
-  else
-    {
-      /* If we're not using the stencil buffer for clipping then we
-         don't need to clear the whole stencil buffer, just the area
-         that will be drawn */
-      if (need_clear)
-        /* If this is being called from the clip stack code then it
-           will have set up a scissor for the minimum bounding box of
-           all of the clips. That box will likely mean that this
-           _cogl_clear won't need to clear the entire
-           buffer. _cogl_framebuffer_clear_without_flush4f is used instead
-           of cogl_clear because it won't try to flush the journal */
-        _cogl_framebuffer_clear_without_flush4f (framebuffer,
-                                                 COGL_BUFFER_BIT_STENCIL,
-                                                 0, 0, 0, 0);
-      else
-        {
-          /* Just clear the bounding box */
-          GE( ctx, glStencilMask (~(GLuint) 0) );
-          GE( ctx, glStencilOp (GL_ZERO, GL_ZERO, GL_ZERO) );
-          _cogl_rectangle_immediate (data->path_nodes_min.x,
-                                     data->path_nodes_min.y,
-                                     data->path_nodes_max.x,
-                                     data->path_nodes_max.y);
-        }
-      GE (ctx, glStencilMask (1));
-      GE (ctx, glStencilFunc (GL_LEQUAL, 0x1, 0x3));
-    }
-
-  GE (ctx, glStencilOp (GL_INVERT, GL_INVERT, GL_INVERT));
-
-  if (path->data->path_nodes->len >= 3)
-    _cogl_path_fill_nodes (path);
-
-  if (merge)
-    {
-      /* Now we have the new stencil buffer in bit 1 and the old
-         stencil buffer in bit 0 so we need to intersect them */
-      GE (ctx, glStencilMask (3));
-      GE (ctx, glStencilFunc (GL_NEVER, 0x2, 0x3));
-      GE (ctx, glStencilOp (GL_DECR, GL_DECR, GL_DECR));
-      /* Decrement all of the bits twice so that only pixels where the
-         value is 3 will remain */
-
-      _cogl_matrix_stack_push (projection_stack);
-      _cogl_matrix_stack_load_identity (projection_stack);
-      _cogl_matrix_stack_flush_to_gl (projection_stack,
-                                      COGL_MATRIX_PROJECTION);
-
-      _cogl_matrix_stack_push (modelview_stack);
-      _cogl_matrix_stack_load_identity (modelview_stack);
-      _cogl_matrix_stack_flush_to_gl (modelview_stack,
-                                      COGL_MATRIX_MODELVIEW);
-
-      _cogl_rectangle_immediate (-1.0, -1.0, 1.0, 1.0);
-      _cogl_rectangle_immediate (-1.0, -1.0, 1.0, 1.0);
-
-      _cogl_matrix_stack_pop (modelview_stack);
-      _cogl_matrix_stack_pop (projection_stack);
-    }
-
-  GE (ctx, glStencilMask (~(GLuint) 0));
-  GE (ctx, glDepthMask (TRUE));
-  GE (ctx, glColorMask (TRUE, TRUE, TRUE, TRUE));
-
-  GE (ctx, glStencilFunc (GL_EQUAL, 0x1, 0x1));
-  GE (ctx, glStencilOp (GL_KEEP, GL_KEEP, GL_KEEP));
-
-  /* restore the original pipeline */
-  cogl_pop_source ();
+  _cogl_framebuffer_draw_indexed_attributes (cogl_get_draw_framebuffer (),
+                                             pipeline,
+                                             COGL_VERTICES_MODE_TRIANGLES,
+                                             0, /* first_vertex */
+                                             path->data->fill_vbo_n_indices,
+                                             path->data->fill_vbo_indices,
+                                             path->data->fill_attributes,
+                                             COGL_PATH_N_ATTRIBUTES,
+                                             flags);
 }
 
 void
 cogl2_path_fill (CoglPath *path)
 {
-  CoglFramebuffer *framebuffer;
-
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   if (path->data->path_nodes->len == 0)
     return;
@@ -476,26 +367,13 @@ cogl2_path_fill (CoglPath *path)
       cogl_rectangle (x_1, y_1, x_2, y_2);
     }
   else
-    {
-      framebuffer = cogl_get_draw_framebuffer ();
-
-      _cogl_framebuffer_flush_journal (framebuffer);
-
-      /* NB: _cogl_framebuffer_flush_state may disrupt various state (such
-       * as the pipeline state) when flushing the clip stack, so should
-       * always be done first when preparing to draw. */
-      _cogl_framebuffer_flush_state (framebuffer,
-                                     _cogl_get_read_framebuffer (),
-                                     0);
-
-      _cogl_path_fill_nodes (path);
-    }
+    _cogl_path_fill_nodes (path, 0);
 }
 
 void
 cogl2_path_stroke (CoglPath *path)
 {
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   if (path->data->path_nodes->len == 0)
     return;
@@ -510,7 +388,7 @@ cogl2_path_move_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   _cogl_path_add_node (path, TRUE, x, y);
 
@@ -529,7 +407,7 @@ cogl2_path_rel_move_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   data = path->data;
 
@@ -545,7 +423,7 @@ cogl2_path_line_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   _cogl_path_add_node (path, FALSE, x, y);
 
@@ -562,7 +440,7 @@ cogl2_path_rel_line_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   data = path->data;
 
@@ -574,7 +452,7 @@ cogl2_path_rel_line_to (CoglPath *path,
 void
 cogl2_path_close (CoglPath *path)
 {
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   _cogl_path_add_node (path, FALSE, path->data->path_start.x,
                        path->data->path_start.y);
@@ -600,7 +478,7 @@ cogl2_path_polyline (CoglPath *path,
 {
   int c = 0;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   cogl2_path_move_to (path, coords[0], coords[1]);
 
@@ -725,7 +603,7 @@ cogl2_path_arc (CoglPath *path,
 {
   float angle_step = 10;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   /* it is documented that a move to is needed to create a freestanding
    * arc
@@ -769,7 +647,7 @@ cogl2_path_ellipse (CoglPath *path,
 {
   float angle_step = 10;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   /* FIXME: if shows to be slow might be optimized
    * by mirroring just a quarter of it */
@@ -795,7 +673,7 @@ cogl2_path_round_rectangle (CoglPath *path,
   float inner_width = x_2 - x_1 - radius * 2;
   float inner_height = y_2 - y_1 - radius * 2;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   cogl2_path_move_to (path, x_1, y_1 + radius);
   _cogl_path_rel_arc (path,
@@ -946,7 +824,7 @@ cogl2_path_curve_to (CoglPath *path,
 {
   CoglBezCubic cubic;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   /* Prepare cubic curve */
   cubic.p1 = path->data->path_pen;
@@ -976,7 +854,7 @@ cogl2_path_rel_curve_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   data = path->data;
 
@@ -1014,7 +892,7 @@ cogl_path_copy (CoglPath *old_path)
 {
   CoglPath *new_path;
 
-  g_return_val_if_fail (cogl_is_path (old_path), NULL);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_path (old_path), NULL);
 
   new_path = g_slice_new (CoglPath);
   new_path->data = old_path->data;
@@ -1135,7 +1013,7 @@ cogl_rel_curve2_to (CoglPath *path,
 {
   CoglPathData *data;
 
-  g_return_if_fail (cogl_is_path (path));
+  _COGL_RETURN_IF_FAIL (cogl_is_path (path));
 
   data = path->data;
 
@@ -1389,6 +1267,8 @@ _cogl_path_build_fill_attribute_buffer (CoglPath *path)
   CoglPathData *data = path->data;
   int i;
 
+  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
+
   /* If we've already got a vbo then we don't need to do anything */
   if (data->fill_attribute_buffer)
     return;
@@ -1474,7 +1354,8 @@ _cogl_path_build_fill_attribute_buffer (CoglPath *path)
   gluDeleteTess (tess.glu_tess);
 
   data->fill_attribute_buffer =
-    cogl_attribute_buffer_new (sizeof (CoglPathTesselatorVertex) *
+    cogl_attribute_buffer_new (ctx,
+                               sizeof (CoglPathTesselatorVertex) *
                                tess.vertices->len,
                                tess.vertices->data);
   g_array_free (tess.vertices, TRUE);
@@ -1494,7 +1375,8 @@ _cogl_path_build_fill_attribute_buffer (CoglPath *path)
                         2, /* n_components */
                         COGL_ATTRIBUTE_TYPE_FLOAT);
 
-  data->fill_vbo_indices = cogl_indices_new (tess.indices_type,
+  data->fill_vbo_indices = cogl_indices_new (ctx,
+                                             tess.indices_type,
                                              tess.indices->data,
                                              tess.indices->len);
   data->fill_vbo_n_indices = tess.indices->len;
@@ -1512,12 +1394,14 @@ _cogl_path_build_stroke_attribute_buffer (CoglPath *path)
   floatVec2 *buffer_p;
   unsigned int i;
 
+  _COGL_GET_CONTEXT (ctx, NO_RETVAL);
+
   /* If we've already got a cached vbo then we don't need to do anything */
   if (data->stroke_attribute_buffer)
     return;
 
   data->stroke_attribute_buffer =
-    cogl_attribute_buffer_new (data->path_nodes->len * sizeof (floatVec2),
+    cogl_attribute_buffer_new (ctx, data->path_nodes->len * sizeof (floatVec2),
                                NULL);
 
   buffer = COGL_BUFFER (data->stroke_attribute_buffer);

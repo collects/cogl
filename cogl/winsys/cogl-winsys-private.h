@@ -25,8 +25,8 @@
 #define __COGL_WINSYS_PRIVATE_H
 
 #include "cogl-renderer.h"
+#include "cogl-onscreen.h"
 
-#include "cogl-framebuffer-private.h"
 #ifdef COGL_HAS_XLIB_SUPPORT
 #include "cogl-texture-pixmap-x11-private.h"
 #endif
@@ -57,6 +57,7 @@ typedef enum
 typedef struct _CoglWinsysVtable
 {
   CoglWinsysID id;
+  CoglRendererConstraint constraints;
 
   const char *name;
 
@@ -128,14 +129,15 @@ typedef struct _CoglWinsysVtable
   (*onscreen_win32_get_window) (CoglOnscreen *onscreen);
 #endif
 
-  unsigned int
-  (*onscreen_add_swap_buffers_callback) (CoglOnscreen *onscreen,
-                                         CoglSwapBuffersNotify callback,
-                                         void *user_data);
-
   void
-  (*onscreen_remove_swap_buffers_callback) (CoglOnscreen *onscreen,
-                                            unsigned int id);
+  (*poll_get_info) (CoglContext *context,
+                    CoglPollFD **poll_fds,
+                    int *n_poll_fds,
+                    gint64 *timeout);
+  void
+  (*poll_dispatch) (CoglContext *context,
+                    const CoglPollFD *poll_fds,
+                    int n_poll_fds);
 
 #ifdef COGL_HAS_XLIB_SUPPORT
   gboolean

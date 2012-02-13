@@ -71,15 +71,19 @@ _cogl_pipeline_progends[MAX (COGL_PIPELINE_N_PROGENDS, 1)];
 #ifdef COGL_PIPELINE_FRAGEND_FIXED
 #include "cogl-pipeline-fragend-fixed-private.h"
 #endif
-#ifdef COGL_PIPELINE_PROGEND_GLSL
-#include "cogl-pipeline-progend-glsl-private.h"
-#endif
 
 #ifdef COGL_PIPELINE_VERTEND_GLSL
 #include "cogl-pipeline-vertend-glsl-private.h"
 #endif
 #ifdef COGL_PIPELINE_VERTEND_FIXED
 #include "cogl-pipeline-vertend-fixed-private.h"
+#endif
+
+#ifdef COGL_PIPELINE_PROGEND_FIXED
+#include "cogl-pipeline-progend-fixed-private.h"
+#endif
+#ifdef COGL_PIPELINE_PROGEND_GLSL
+#include "cogl-pipeline-progend-glsl-private.h"
 #endif
 
 COGL_OBJECT_DEFINE (Pipeline, pipeline);
@@ -111,6 +115,7 @@ _cogl_pipeline_init_default_pipeline (void)
   CoglDepthState *depth_state = &big_state->depth_state;
   CoglPipelineLogicOpsState *logic_ops_state = &big_state->logic_ops_state;
   CoglPipelineCullFaceState *cull_face_state = &big_state->cull_face_state;
+  CoglPipelineUniformsState *uniforms_state = &big_state->uniforms_state;
 
   _COGL_GET_CONTEXT (ctx, NO_RETVAL);
 
@@ -126,6 +131,10 @@ _cogl_pipeline_init_default_pipeline (void)
 #ifdef COGL_PIPELINE_FRAGEND_FIXED
   _cogl_pipeline_fragends[COGL_PIPELINE_FRAGEND_FIXED] =
     &_cogl_pipeline_fixed_fragend;
+#endif
+#ifdef COGL_PIPELINE_PROGEND_FIXED
+  _cogl_pipeline_progends[COGL_PIPELINE_PROGEND_FIXED] =
+    &_cogl_pipeline_fixed_progend;
 #endif
 #ifdef COGL_PIPELINE_PROGEND_GLSL
   _cogl_pipeline_progends[COGL_PIPELINE_PROGEND_GLSL] =
@@ -221,6 +230,10 @@ _cogl_pipeline_init_default_pipeline (void)
   cull_face_state->mode = COGL_PIPELINE_CULL_FACE_MODE_NONE;
   cull_face_state->front_winding = COGL_WINDING_COUNTER_CLOCKWISE;
 
+  _cogl_bitmask_init (&uniforms_state->override_mask);
+  _cogl_bitmask_init (&uniforms_state->changed_mask);
+  uniforms_state->override_values = NULL;
+
   ctx->default_pipeline = _cogl_pipeline_object_new (pipeline);
 }
 
@@ -297,7 +310,7 @@ _cogl_pipeline_promote_weak_ancestors (CoglPipeline *strong)
 {
   CoglNode *n;
 
-  g_return_if_fail (!strong->is_weak);
+  _COGL_RETURN_IF_FAIL (!strong->is_weak);
 
   /* If the parent of strong is weak, then we want to promote it by
      taking a reference on strong's grandparent. We don't need to take
@@ -319,7 +332,7 @@ _cogl_pipeline_revert_weak_ancestors (CoglPipeline *strong)
 {
   CoglNode *n;
 
-  g_return_if_fail (!strong->is_weak);
+  _COGL_RETURN_IF_FAIL (!strong->is_weak);
 
   /* This reverts the effect of calling
      _cogl_pipeline_promote_weak_ancestors */
@@ -458,6 +471,21 @@ _cogl_pipeline_free (CoglPipeline *pipeline)
       pipeline->big_state->user_program)
     cogl_handle_unref (pipeline->big_state->user_program);
 
+  if (pipeline->differences & COGL_PIPELINE_STATE_UNIFORMS)
+    {
+      CoglPipelineUniformsState *uniforms_state
+        = &pipeline->big_state->uniforms_state;
+      int n_overrides = _cogl_bitmask_popcount (&uniforms_state->override_mask);
+      int i;
+
+      for (i = 0; i < n_overrides; i++)
+        _cogl_boxed_value_destroy (uniforms_state->override_values + i);
+      g_free (uniforms_state->override_values);
+
+      _cogl_bitmask_destroy (&uniforms_state->override_mask);
+      _cogl_bitmask_destroy (&uniforms_state->changed_mask);
+    }
+
   if (pipeline->differences & COGL_PIPELINE_STATE_NEEDS_BIG_STATE)
     g_slice_free (CoglPipelineBigState, pipeline->big_state);
 
@@ -467,6 +495,12 @@ _cogl_pipeline_free (CoglPipeline *pipeline)
                       (GFunc)cogl_object_unref, NULL);
       g_list_free (pipeline->layer_differences);
     }
+
+  if (pipeline->differences & COGL_PIPELINE_STATE_VERTEX_SNIPPETS)
+    _cogl_pipeline_snippet_list_free (&pipeline->big_state->vertex_snippets);
+
+  if (pipeline->differences & COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
+    _cogl_pipeline_snippet_list_free (&pipeline->big_state->fragment_snippets);
 
   g_list_free (pipeline->deprecated_get_layers_list);
 
@@ -478,7 +512,7 @@ _cogl_pipeline_free (CoglPipeline *pipeline)
 gboolean
 _cogl_pipeline_get_real_blend_enabled (CoglPipeline *pipeline)
 {
-  g_return_val_if_fail (cogl_is_pipeline (pipeline), FALSE);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_pipeline (pipeline), FALSE);
 
   return pipeline->real_blend_enable;
 }
@@ -583,7 +617,7 @@ _cogl_pipeline_foreach_layer_internal (CoglPipeline *pipeline,
 
   for (i = 0, cont = TRUE; i < n_layers && cont == TRUE; i++)
     {
-      g_return_if_fail (authority->layers_cache_dirty == FALSE);
+      _COGL_RETURN_IF_FAIL (authority->layers_cache_dirty == FALSE);
       cont = callback (authority->layers_cache[i], user_data);
     }
 }
@@ -732,6 +766,18 @@ _cogl_pipeline_needs_blending_enabled (CoglPipeline    *pipeline,
        * TODO: check that it isn't just a vertex shader!
        */
       if (_cogl_pipeline_get_user_program (pipeline) != COGL_INVALID_HANDLE)
+        return TRUE;
+    }
+
+  if (changes & COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
+    {
+      if (!_cogl_pipeline_has_non_layer_fragment_snippets (pipeline))
+        return TRUE;
+    }
+
+  if (changes & COGL_PIPELINE_STATE_VERTEX_SNIPPETS)
+    {
+      if (!_cogl_pipeline_has_non_layer_vertex_snippets (pipeline))
         return TRUE;
     }
 
@@ -927,6 +973,40 @@ _cogl_pipeline_copy_differences (CoglPipeline *dest,
               sizeof (CoglPipelineCullFaceState));
     }
 
+  if (differences & COGL_PIPELINE_STATE_UNIFORMS)
+    {
+      int n_overrides =
+        _cogl_bitmask_popcount (&src->big_state->uniforms_state.override_mask);
+      int i;
+
+      big_state->uniforms_state.override_values =
+        g_malloc (n_overrides * sizeof (CoglBoxedValue));
+
+      for (i = 0; i < n_overrides; i++)
+        {
+          CoglBoxedValue *dst_bv =
+            big_state->uniforms_state.override_values + i;
+          const CoglBoxedValue *src_bv =
+            src->big_state->uniforms_state.override_values + i;
+
+          _cogl_boxed_value_copy (dst_bv, src_bv);
+        }
+
+      _cogl_bitmask_init (&big_state->uniforms_state.override_mask);
+      _cogl_bitmask_set_bits (&big_state->uniforms_state.override_mask,
+                              &src->big_state->uniforms_state.override_mask);
+
+      _cogl_bitmask_init (&big_state->uniforms_state.changed_mask);
+    }
+
+  if (differences & COGL_PIPELINE_STATE_VERTEX_SNIPPETS)
+    _cogl_pipeline_snippet_list_copy (&big_state->vertex_snippets,
+                                      &src->big_state->vertex_snippets);
+
+  if (differences & COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS)
+    _cogl_pipeline_snippet_list_copy (&big_state->fragment_snippets,
+                                      &src->big_state->fragment_snippets);
+
   /* XXX: we shouldn't bother doing this in most cases since
    * _copy_differences is typically used to initialize pipeline state
    * by copying it from the current authority, so it's not actually
@@ -945,7 +1025,7 @@ _cogl_pipeline_init_multi_property_sparse_state (CoglPipeline *pipeline,
 {
   CoglPipeline *authority;
 
-  g_return_if_fail (change & COGL_PIPELINE_STATE_ALL_SPARSE);
+  _COGL_RETURN_IF_FAIL (change & COGL_PIPELINE_STATE_ALL_SPARSE);
 
   if (!(change & COGL_PIPELINE_STATE_MULTI_PROPERTY))
     return;
@@ -1011,6 +1091,25 @@ _cogl_pipeline_init_multi_property_sparse_state (CoglPipeline *pipeline,
                 sizeof (CoglPipelineCullFaceState));
         break;
       }
+    case COGL_PIPELINE_STATE_UNIFORMS:
+      {
+        CoglPipelineUniformsState *uniforms_state =
+          &pipeline->big_state->uniforms_state;
+        _cogl_bitmask_init (&uniforms_state->override_mask);
+        _cogl_bitmask_init (&uniforms_state->changed_mask);
+        uniforms_state->override_values = NULL;
+        break;
+      }
+    case COGL_PIPELINE_STATE_VERTEX_SNIPPETS:
+      _cogl_pipeline_snippet_list_copy (&pipeline->big_state->vertex_snippets,
+                                        &authority->big_state->vertex_snippets);
+      break;
+
+    case COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS:
+      _cogl_pipeline_snippet_list_copy (&pipeline->big_state->fragment_snippets,
+                                        &authority->big_state->
+                                        fragment_snippets);
+      break;
     }
 }
 
@@ -1285,7 +1384,7 @@ _cogl_pipeline_add_layer_difference (CoglPipeline *pipeline,
                                      CoglPipelineLayer *layer,
                                      gboolean inc_n_layers)
 {
-  g_return_if_fail (layer->owner == NULL);
+  _COGL_RETURN_IF_FAIL (layer->owner == NULL);
 
   layer->owner = pipeline;
   cogl_object_ref (layer);
@@ -1319,7 +1418,7 @@ _cogl_pipeline_remove_layer_difference (CoglPipeline *pipeline,
                                         CoglPipelineLayer *layer,
                                         gboolean dec_n_layers)
 {
-  g_return_if_fail (layer->owner == pipeline);
+  _COGL_RETURN_IF_FAIL (layer->owner == pipeline);
 
   /* - Flush journal primitives referencing the current state.
    * - Make sure the pipeline has no dependants so it may be modified.
@@ -1692,7 +1791,7 @@ _cogl_pipeline_prune_empty_layer_difference (CoglPipeline *layers_authority,
   CoglPipelineLayerInfo layer_info;
   CoglPipeline *old_layers_authority;
 
-  g_return_if_fail (link != NULL);
+  _COGL_RETURN_IF_FAIL (link != NULL);
 
   /* If the layer's parent doesn't have an owner then we can simply
    * take ownership ourselves and drop our reference on the empty
@@ -2199,6 +2298,24 @@ _cogl_pipeline_equal (CoglPipeline *pipeline0,
                               _cogl_pipeline_user_shader_equal))
     goto done;
 
+  if (!simple_property_equal (authorities0, authorities1,
+                              pipelines_difference,
+                              COGL_PIPELINE_STATE_UNIFORMS_INDEX,
+                              _cogl_pipeline_uniforms_state_equal))
+    goto done;
+
+  if (!simple_property_equal (authorities0, authorities1,
+                              pipelines_difference,
+                              COGL_PIPELINE_STATE_VERTEX_SNIPPETS_INDEX,
+                              _cogl_pipeline_vertex_snippets_state_equal))
+    goto done;
+
+  if (!simple_property_equal (authorities0, authorities1,
+                              pipelines_difference,
+                              COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS_INDEX,
+                              _cogl_pipeline_fragment_snippets_state_equal))
+    goto done;
+
   if (pipelines_difference & COGL_PIPELINE_STATE_LAYERS)
     {
       CoglPipelineStateIndex state_index = COGL_PIPELINE_STATE_LAYERS_INDEX;
@@ -2289,7 +2406,7 @@ _cogl_pipeline_get_fog_enabled (CoglPipeline *pipeline)
 {
   CoglPipeline *authority;
 
-  g_return_val_if_fail (cogl_is_pipeline (pipeline), FALSE);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_pipeline (pipeline), FALSE);
 
   authority =
     _cogl_pipeline_get_authority (pipeline, COGL_PIPELINE_STATE_FOG);
@@ -2299,7 +2416,7 @@ _cogl_pipeline_get_fog_enabled (CoglPipeline *pipeline)
 unsigned long
 _cogl_pipeline_get_age (CoglPipeline *pipeline)
 {
-  g_return_val_if_fail (cogl_is_pipeline (pipeline), 0);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_pipeline (pipeline), 0);
 
   return pipeline->age;
 }
@@ -2311,7 +2428,7 @@ cogl_pipeline_remove_layer (CoglPipeline *pipeline, int layer_index)
   CoglPipelineLayerInfo layer_info;
   int                   i;
 
-  g_return_if_fail (cogl_is_pipeline (pipeline));
+  _COGL_RETURN_IF_FAIL (cogl_is_pipeline (pipeline));
 
   authority =
     _cogl_pipeline_get_authority (pipeline, COGL_PIPELINE_STATE_LAYERS);
@@ -2374,7 +2491,7 @@ prepend_layer_to_list_cb (CoglPipelineLayer *layer,
 const GList *
 _cogl_pipeline_get_layers (CoglPipeline *pipeline)
 {
-  g_return_val_if_fail (cogl_is_pipeline (pipeline), NULL);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_pipeline (pipeline), NULL);
 
   if (!pipeline->deprecated_get_layers_list_dirty)
     g_list_free (pipeline->deprecated_get_layers_list);
@@ -2397,7 +2514,7 @@ cogl_pipeline_get_n_layers (CoglPipeline *pipeline)
 {
   CoglPipeline *authority;
 
-  g_return_val_if_fail (cogl_is_pipeline (pipeline), 0);
+  _COGL_RETURN_VAL_IF_FAIL (cogl_is_pipeline (pipeline), 0);
 
   authority =
     _cogl_pipeline_get_authority (pipeline, COGL_PIPELINE_STATE_LAYERS);
@@ -2460,12 +2577,8 @@ _cogl_pipeline_apply_legacy_state (CoglPipeline *pipeline)
     _cogl_pipeline_set_fog_state (pipeline, &ctx->legacy_fog_state);
 
   if (ctx->legacy_backface_culling_enabled)
-    {
-      CoglPipelineCullFaceState state;
-      state.mode = COGL_PIPELINE_CULL_FACE_MODE_BACK;
-      state.front_winding = COGL_WINDING_COUNTER_CLOCKWISE;
-      _cogl_pipeline_set_cull_face_state (pipeline, &state);
-    }
+    cogl_pipeline_set_cull_face_mode (pipeline,
+                                      COGL_PIPELINE_CULL_FACE_MODE_BACK);
 }
 
 void
@@ -2509,9 +2622,15 @@ _cogl_pipeline_init_layer_state_hash_functions (void)
   _index = COGL_PIPELINE_LAYER_STATE_POINT_SPRITE_COORDS_INDEX;
   layer_state_hash_functions[_index] =
     _cogl_pipeline_layer_hash_point_sprite_state;
+  _index = COGL_PIPELINE_LAYER_STATE_VERTEX_SNIPPETS_INDEX;
+  layer_state_hash_functions[_index] =
+    _cogl_pipeline_layer_hash_point_sprite_state;
+  _index = COGL_PIPELINE_LAYER_STATE_FRAGMENT_SNIPPETS_INDEX;
+  layer_state_hash_functions[_index] =
+    _cogl_pipeline_layer_hash_fragment_snippets_state;
 
   /* So we get a big error if we forget to update this code! */
-  g_assert (COGL_PIPELINE_LAYER_STATE_SPARSE_COUNT == 9);
+  g_assert (COGL_PIPELINE_LAYER_STATE_SPARSE_COUNT == 11);
 }
 
 static gboolean
@@ -2610,9 +2729,15 @@ _cogl_pipeline_init_state_hash_functions (void)
     _cogl_pipeline_hash_point_size_state;
   state_hash_functions[COGL_PIPELINE_STATE_LOGIC_OPS_INDEX] =
     _cogl_pipeline_hash_logic_ops_state;
+  state_hash_functions[COGL_PIPELINE_STATE_UNIFORMS_INDEX] =
+    _cogl_pipeline_hash_uniforms_state;
+  state_hash_functions[COGL_PIPELINE_STATE_VERTEX_SNIPPETS_INDEX] =
+    _cogl_pipeline_hash_vertex_snippets_state;
+  state_hash_functions[COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS_INDEX] =
+    _cogl_pipeline_hash_fragment_snippets_state;
 
   /* So we get a big error if we forget to update this code! */
-  g_assert (COGL_PIPELINE_STATE_SPARSE_COUNT == 13);
+  g_assert (COGL_PIPELINE_STATE_SPARSE_COUNT == 16);
 }
 
 unsigned int
@@ -2789,7 +2914,8 @@ _cogl_pipeline_get_layer_state_for_fragment_codegen (CoglContext *context)
     (COGL_PIPELINE_LAYER_STATE_COMBINE |
      COGL_PIPELINE_LAYER_STATE_TEXTURE_TARGET |
      COGL_PIPELINE_LAYER_STATE_POINT_SPRITE_COORDS |
-     COGL_PIPELINE_LAYER_STATE_UNIT);
+     COGL_PIPELINE_LAYER_STATE_UNIT |
+     COGL_PIPELINE_LAYER_STATE_FRAGMENT_SNIPPETS);
 
   if (context->driver == COGL_DRIVER_GLES2)
     state |= COGL_PIPELINE_LAYER_STATE_POINT_SPRITE_COORDS;
@@ -2801,10 +2927,43 @@ CoglPipelineState
 _cogl_pipeline_get_state_for_fragment_codegen (CoglContext *context)
 {
   CoglPipelineState state = (COGL_PIPELINE_STATE_LAYERS |
-                             COGL_PIPELINE_STATE_USER_SHADER);
+                             COGL_PIPELINE_STATE_USER_SHADER |
+                             COGL_PIPELINE_STATE_FRAGMENT_SNIPPETS);
 
   if (context->driver == COGL_DRIVER_GLES2)
     state |= COGL_PIPELINE_STATE_ALPHA_FUNC;
 
   return state;
+}
+
+int
+cogl_pipeline_get_uniform_location (CoglPipeline *pipeline,
+                                    const char *uniform_name)
+{
+  void *location_ptr;
+  char *uniform_name_copy;
+
+  _COGL_GET_CONTEXT (ctx, -1);
+
+  /* This API is designed as if the uniform locations are specific to
+     a pipeline but they are actually unique across a whole
+     CoglContext. Potentially this could just be
+     cogl_context_get_uniform_location but it seems to make sense to
+     keep the API this way so that we can change the internals if need
+     be. */
+
+  /* Look for an existing uniform with this name */
+  if (g_hash_table_lookup_extended (ctx->uniform_name_hash,
+                                    uniform_name,
+                                    NULL,
+                                    &location_ptr))
+    return GPOINTER_TO_INT (location_ptr);
+
+  uniform_name_copy = g_strdup (uniform_name);
+  g_ptr_array_add (ctx->uniform_names, uniform_name_copy);
+  g_hash_table_insert (ctx->uniform_name_hash,
+                       uniform_name_copy,
+                       GINT_TO_POINTER (ctx->n_uniform_names));
+
+  return ctx->n_uniform_names++;
 }

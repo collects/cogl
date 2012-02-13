@@ -31,17 +31,21 @@
 CoglPipeline *
 _cogl_pipeline_get_user_program (CoglPipeline *pipeline);
 
+gboolean
+_cogl_pipeline_has_vertex_snippets (CoglPipeline *pipeline);
+
+gboolean
+_cogl_pipeline_has_fragment_snippets (CoglPipeline *pipeline);
+
+gboolean
+_cogl_pipeline_has_non_layer_vertex_snippets (CoglPipeline *pipeline);
+
+gboolean
+_cogl_pipeline_has_non_layer_fragment_snippets (CoglPipeline *pipeline);
+
 void
 _cogl_pipeline_set_fog_state (CoglPipeline *pipeline,
                               const CoglPipelineFogState *fog_state);
-
-void
-_cogl_pipeline_set_cull_face_state (CoglPipeline *pipeline,
-                                    const CoglPipelineCullFaceState *
-                                                             cull_face_state);
-
-CoglPipelineCullFaceMode
-_cogl_pipeline_get_cull_face_mode (CoglPipeline *pipeline);
 
 gboolean
 _cogl_pipeline_color_equal (CoglPipeline *authority0,
@@ -86,6 +90,18 @@ _cogl_pipeline_user_shader_equal (CoglPipeline *authority0,
 gboolean
 _cogl_pipeline_cull_face_state_equal (CoglPipeline *authority0,
                                       CoglPipeline *authority1);
+
+gboolean
+_cogl_pipeline_uniforms_state_equal (CoglPipeline *authority0,
+                                     CoglPipeline *authority1);
+
+gboolean
+_cogl_pipeline_vertex_snippets_state_equal (CoglPipeline *authority0,
+                                            CoglPipeline *authority1);
+
+gboolean
+_cogl_pipeline_fragment_snippets_state_equal (CoglPipeline *authority0,
+                                              CoglPipeline *authority1);
 
 void
 _cogl_pipeline_hash_color_state (CoglPipeline *authority,
@@ -138,5 +154,22 @@ _cogl_pipeline_hash_logic_ops_state (CoglPipeline *authority,
 void
 _cogl_pipeline_hash_cull_face_state (CoglPipeline *authority,
                                      CoglPipelineHashState *state);
+
+void
+_cogl_pipeline_hash_uniforms_state (CoglPipeline *authority,
+                                    CoglPipelineHashState *state);
+
+void
+_cogl_pipeline_hash_vertex_snippets_state (CoglPipeline *authority,
+                                           CoglPipelineHashState *state);
+
+void
+_cogl_pipeline_hash_fragment_snippets_state (CoglPipeline *authority,
+                                             CoglPipelineHashState *state);
+
+void
+_cogl_pipeline_compare_uniform_differences (unsigned long *differences,
+                                            CoglPipeline *pipeline0,
+                                            CoglPipeline *pipeline1);
 
 #endif /* __COGL_PIPELINE_STATE_PRIVATE_H */

@@ -51,8 +51,9 @@ typedef void (*CoglUserDataDestroyInternalCallback) (void *user_data,
 
 typedef struct _CoglObjectClass
 {
-  GQuark   type;
-  void    *virt_free;
+  const char *name;
+  void *virt_free;
+  void *virt_unref;
 } CoglObjectClass;
 
 #define COGL_OBJECT_N_PRE_ALLOCATED_USER_DATA_ENTRIES 2
@@ -73,14 +74,14 @@ typedef struct
  */
 struct _CoglObject
 {
-  unsigned int      ref_count;
+  CoglObjectClass  *klass;
 
   CoglUserDataEntry user_data_entry[
     COGL_OBJECT_N_PRE_ALLOCATED_USER_DATA_ENTRIES];
   GArray           *user_data_array;
   int               n_user_data_entries;
 
-  CoglObjectClass  *klass;
+  unsigned int      ref_count;
 };
 
 /* Helper macro to encapsulate the common code for COGL reference
@@ -95,18 +96,18 @@ struct _CoglObject
 #define _COGL_OBJECT_DEBUG_REF(type_name, object)       G_STMT_START {  \
   CoglObject *__obj = (CoglObject *)object;                             \
   COGL_NOTE (HANDLE, "COGL %s REF %p %i",                               \
-             g_quark_to_string ((__obj)->klass->type),                  \
+             (__obj)->klass->name,                                      \
              (__obj), (__obj)->ref_count);              } G_STMT_END
 
 #define _COGL_OBJECT_DEBUG_UNREF(type_name, object)     G_STMT_START {  \
   CoglObject *__obj = (CoglObject *)object;                             \
   COGL_NOTE (HANDLE, "COGL %s UNREF %p %i",                             \
-             g_quark_to_string ((__obj)->klass->type),                  \
+             (__obj)->klass->name,                                      \
              (__obj), (__obj)->ref_count - 1);          } G_STMT_END
 
 #define COGL_OBJECT_DEBUG_FREE(obj)                                     \
   COGL_NOTE (HANDLE, "COGL %s FREE %p",                                 \
-             g_quark_to_string ((obj)->klass->type), (obj))
+             (obj)->klass->name, (obj))
 
 #else /* !COGL_OBJECT_DEBUG */
 
@@ -125,7 +126,7 @@ struct _CoglObject
 
 #define COGL_OBJECT_COMMON_DEFINE_WITH_CODE(TypeName, type_name, code)  \
                                                                         \
-static CoglObjectClass _cogl_##type_name##_class;                       \
+CoglObjectClass _cogl_##type_name##_class;                              \
 static unsigned long _cogl_object_##type_name##_count;                  \
                                                                         \
 static inline void                                                      \
@@ -147,34 +148,6 @@ _cogl_object_##type_name##_indirect_free (CoglObject *obj)              \
   _cogl_object_##type_name##_dec ();                                    \
 }                                                                       \
                                                                         \
-GQuark                                                                  \
-_cogl_object_##type_name##_get_type (void)                              \
-{                                                                       \
-  static GQuark type = 0;                                               \
-  if (!type)                                                            \
-    {                                                                   \
-      type = g_quark_from_static_string ("Cogl"#TypeName);              \
-      _cogl_object_##type_name##_count = 0;                             \
-                                                                        \
-      if (_cogl_debug_instances == NULL)                                \
-        _cogl_debug_instances =                                         \
-          g_hash_table_new (g_str_hash, g_str_equal);                   \
-                                                                        \
-      g_hash_table_insert (_cogl_debug_instances,                       \
-                           "Cogl"#TypeName,                             \
-                           &_cogl_object_##type_name##_count);          \
-                                                                        \
-      { code; }                                                         \
-    }                                                                   \
-  return type;                                                          \
-}                                                                       \
-                                                                        \
-GQuark                                                                  \
-_cogl_handle_##type_name##_get_type (void)                              \
-{                                                                       \
-  return _cogl_object_##type_name##_get_type ();                        \
-}                                                                       \
-                                                                        \
 static Cogl##TypeName *                                                 \
 _cogl_##type_name##_object_new (Cogl##TypeName *new_obj)                \
 {                                                                       \
@@ -185,11 +158,25 @@ _cogl_##type_name##_object_new (Cogl##TypeName *new_obj)                \
   obj->user_data_array = NULL;                                          \
                                                                         \
   obj->klass = &_cogl_##type_name##_class;                              \
-  if (!obj->klass->type)                                                \
+  if (!obj->klass->virt_free)                                           \
     {                                                                   \
-      obj->klass->type = _cogl_object_##type_name##_get_type ();        \
+      _cogl_object_##type_name##_count = 0;                             \
+                                                                        \
+      if (_cogl_debug_instances == NULL)                                \
+        _cogl_debug_instances =                                         \
+          g_hash_table_new (g_str_hash, g_str_equal);                   \
+                                                                        \
       obj->klass->virt_free =                                           \
         _cogl_object_##type_name##_indirect_free;                       \
+      obj->klass->virt_unref =                                          \
+        _cogl_object_default_unref;                                     \
+      obj->klass->name = "Cogl"#TypeName,                               \
+                                                                        \
+      g_hash_table_insert (_cogl_debug_instances,                       \
+                           (void *) obj->klass->name,                   \
+                           &_cogl_object_##type_name##_count);          \
+                                                                        \
+      { code; }                                                         \
     }                                                                   \
                                                                         \
   _cogl_object_##type_name##_inc ();                                    \
@@ -215,8 +202,7 @@ cogl_is_##type_name (void *object)                                      \
   if (object == NULL)                                                   \
     return FALSE;                                                       \
                                                                         \
-  return (obj->klass->type ==                                           \
-          _cogl_object_##type_name##_get_type ());                      \
+  return obj->klass == &_cogl_##type_name##_class;                      \
 }
 
 #define COGL_OBJECT_INTERNAL_DEFINE_WITH_CODE(TypeName, type_name, code) \
@@ -231,8 +217,7 @@ _cogl_is_##type_name (void *object)                                     \
   if (object == NULL)                                                   \
     return FALSE;                                                       \
                                                                         \
-  return (obj->klass->type ==                                           \
-          _cogl_object_##type_name##_get_type ());                      \
+  return obj->klass == &_cogl_##type_name##_class;                      \
 }
 
 #define COGL_OBJECT_DEFINE_DEPRECATED_REF_COUNTING(type_name)   \
@@ -304,6 +289,9 @@ _cogl_object_set_user_data (CoglObject *object,
                             CoglUserDataKey *key,
                             void *user_data,
                             CoglUserDataDestroyInternalCallback destroy);
+
+void
+_cogl_object_default_unref (void *obj);
 
 #endif /* __COGL_OBJECT_PRIVATE_H */
 

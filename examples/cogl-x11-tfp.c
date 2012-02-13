@@ -1,4 +1,5 @@
 #include <cogl/cogl.h>
+#include <cogl/cogl-xlib.h>
 #include <cogl/winsys/cogl-texture-pixmap-x11.h>
 #include <glib.h>
 #include <stdio.h>
@@ -17,8 +18,6 @@
 
 #define TFP_XWIN_WIDTH 200
 #define TFP_XWIN_HEIGHT 200
-
-CoglColor black;
 
 static void
 update_cogl_x11_event_mask (CoglOnscreen *onscreen,
@@ -166,15 +165,6 @@ main (int argc, char **argv)
                                             update_cogl_x11_event_mask,
                                             xdpy);
 
-  fb = COGL_FRAMEBUFFER (onscreen);
-  /* Eventually there will be an implicit allocate on first use so this
-   * will become optional... */
-  if (!cogl_framebuffer_allocate (fb, &error))
-    {
-      fprintf (stderr, "Failed to allocate framebuffer: %s\n", error->message);
-      return 1;
-    }
-
   XMapWindow (xdpy, xwin);
 
   XCompositeRedirectSubwindows (xdpy, xwin, CompositeRedirectManual);
@@ -189,11 +179,11 @@ main (int argc, char **argv)
 
   gc = XCreateGC (xdpy, tfp_xwin, 0, NULL);
 
-
   pixmap = XCompositeNameWindowPixmap (xdpy, tfp_xwin);
 
   tfp = cogl_texture_pixmap_x11_new (pixmap, TRUE);
 
+  fb = COGL_FRAMEBUFFER (onscreen);
   cogl_push_framebuffer (fb);
 
   for (;;)
@@ -224,7 +214,7 @@ main (int argc, char **argv)
       XFillRectangle (xdpy, tfp_xwin, gc, 0, 0, TFP_XWIN_WIDTH, TFP_XWIN_HEIGHT);
       XFlush (xdpy);
 
-      cogl_clear (&black, COGL_BUFFER_BIT_COLOR);
+      cogl_framebuffer_clear4f (fb, COGL_BUFFER_BIT_COLOR, 0, 0, 0, 1);
       cogl_set_source_texture (tfp);
       cogl_rectangle (-0.8, 0.8, 0.8, -0.8);
       cogl_framebuffer_swap_buffers (fb);

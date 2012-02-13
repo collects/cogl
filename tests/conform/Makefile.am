@@ -17,12 +17,9 @@ unported_test_sources = \
 	test-multitexture.c \
 	test-npot-texture.c \
 	test-object.c \
-	test-offscreen.c \
-	test-path.c \
 	test-pixel-buffer.c \
 	test-premult.c \
 	test-readpixels.c \
-	test-sub-texture.c \
 	test-texture-3d.c \
 	test-texture-get-set-data.c \
 	test-texture-mipmaps.c \
@@ -32,17 +29,24 @@ unported_test_sources = \
 	test-vertex-buffer-contiguous.c \
 	test-vertex-buffer-interleved.c \
 	test-vertex-buffer-mutability.c \
-	test-wrap-modes.c \
-	test-primitive.c \
 	$(NULL)
 
 test_sources = \
+	test-bitmask.c \
 	test-blend-strings.c \
 	test-depth-test.c \
 	test-color-mask.c \
 	test-backface-culling.c \
 	test-just-vertex-shader.c \
+	test-path.c \
 	test-pipeline-user-matrix.c \
+	test-pipeline-uniforms.c \
+	test-snippets.c \
+	test-wrap-modes.c \
+	test-sub-texture.c \
+	test-custom-attributes.c \
+	test-offscreen.c \
+	test-primitive.c \
 	$(NULL)
 
 test_conformance_SOURCES = $(common_sources) $(test_sources)
@@ -82,10 +86,13 @@ stamp-test-conformance: Makefile $(srcdir)/test-conform-main.c
 		echo "  GEN    $$unit"; \
 		( echo "#!/bin/sh" ; echo "$(abs_builddir)/test-launcher.sh '$$i' \"\$$@\"" ) > $$unit$(SHEXT) ; \
 		( echo "#!/bin/sh" ; echo "exec $(abs_builddir)/test-conformance$(EXEEXT) -p $$i \"\$$@\"" ) > wrappers/$$unit$(SHEXT) ; \
+		( echo "test-conformance-cogl$(EXEEXT) -p $$i" ) > $$unit.bat ; \
+		( echo "test-conformance-cogl$(EXEEXT) -p $$i" ) >> test-conformance-cogl.bat ; \
 		chmod +x $$unit$(SHEXT); \
 		chmod +x wrappers/$$unit$(SHEXT); \
 		echo "/$$unit$(SHEXT)" >> .gitignore; \
 	done \
+	&& cp *.bat $(top_builddir)/build/win32/ \
 	&& echo timestamp > $(@F)
 
 clean-wrappers:
@@ -97,18 +104,26 @@ clean-wrappers:
 		rm -f wrappers/$$unit$(SHEXT) ; \
 	done \
 	&& rm -f unit-tests \
+	&& rm -f $(top_builddir)/build/win32/*.bat \
+	&& rm -f *.bat \
 	&& rm -f stamp-test-conformance
 
 # NB: BUILT_SOURCES here a misnomer. We aren't building source, just inserting
 # a phony rule that will generate symlink scripts for running individual tests
 BUILT_SOURCES = wrappers
 
-INCLUDES = -I$(top_srcdir)
+# The include of the $(buildir)/cogl directory here is to make it so
+# that tests that directly include Cogl source code for whitebox
+# testing (such as test-bitmask) will still compile
+INCLUDES = \
+	-I$(top_srcdir) \
+	-I$(top_builddir)/cogl
 
 test_conformance_CPPFLAGS = \
 	-DCOGL_ENABLE_EXPERIMENTAL_API \
 	-DCOGL_DISABLE_DEPRECATED \
-	-DTESTS_DATADIR=\""$(top_srcdir)/tests/data"\"
+	-DTESTS_DATADIR=\""$(top_srcdir)/tests/data"\" \
+	-DCLUTTER_COMPILATION
 
 test_conformance_CFLAGS = -g3 -O0 $(COGL_DEP_CFLAGS) $(COGL_EXTRA_CFLAGS)
 test_conformance_LDADD = $(COGL_DEP_LIBS) $(top_builddir)/cogl/libcogl.la
@@ -229,6 +244,43 @@ HTML_REPORTS = \
 
 EXTRA_DIST = test-launcher.sh.in run-tests.sh
 DISTCLEANFILES = test-launcher.sh .gitignore
+
+dist-hook: ../../build/win32/vs9/test-conformance-cogl.vcproj ../../build/win32/vs10/test-conformance-cogl.vcxproj ../../build/win32/vs10/test-conformance-cogl.vcxproj.filters
+
+../../build/win32/vs9/test-conformance-cogl.vcproj: $(top_srcdir)/build/win32/vs9/test-conformance-cogl.vcprojin
+	for F in $(test_conformance_SOURCES); do \
+		case $$F in \
+		*.c)	echo '   <File RelativePath="..\..\..\tests\conform\'$$F'" />' \
+			;; \
+		esac; \
+	done >testconformance.sourcefiles
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs9/test-conformance-cogl.vcprojin >$@
+	rm testconformance.sourcefiles
+
+../../build/win32/vs10/test-conformance-cogl.vcxproj: $(top_srcdir)/build/win32/vs10/test-conformance-cogl.vcxprojin
+	for F in $(test_conformance_SOURCES); do \
+		case $$F in \
+		*.c)	echo '    <ClCompile Include="..\..\..\tests\conform\'$$F'" />' \
+			;; \
+		esac; \
+	done >testconformance.vs10.sourcefiles
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/test-conformance-cogl.vcxprojin >$@
+	rm testconformance.vs10.sourcefiles
+
+../../build/win32/vs10/test-conformance-cogl.vcxproj.filters: $(top_srcdir)/build/win32/vs10/test-conformance-cogl.vcxproj.filtersin
+	for F in $(test_conformance_SOURCES); do \
+		case $$F in \
+		*.c)	echo '    <ClCompile Include="..\..\..\tests\conform\'$$F'"><Filter>Sources</Filter></ClCompile>' \
+			;; \
+		esac; \
+	done >testconformance.vs10.sourcefiles.filters
+	$(CPP) -P - <$(top_srcdir)/build/win32/vs10/test-conformance-cogl.vcxproj.filtersin >$@
+	rm testconformance.vs10.sourcefiles.filters
+
+# Let the VS9/VS10 Project files be cleared out before they are re-expanded...
+DISTCLEANFILES += ../../build/win32/vs9/test-conformance-cogl.vcproj	\
+		  ../../build/win32/vs10/test-conformance-cogl.vcxproj	\
+		  ../../build/win32/vs10/test-conformance-cogl.vcxproj.filters
 
 # we override the clean-generic target to clean up the wrappers so
 # we cannot use CLEANFILES

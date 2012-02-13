@@ -66,6 +66,7 @@
 #endif
 
 #include <cogl.h>
+#include <cogl-util.h>
 #include <cogl-debug.h>
 #include <cogl-quaternion.h>
 #include <cogl-quaternion-private.h>
@@ -107,7 +108,8 @@ enum CoglMatrixType {
    COGL_MATRIX_TYPE_PERSPECTIVE,	/**< perspective projection matrix */
    COGL_MATRIX_TYPE_2D,		/**< 2-D transformation */
    COGL_MATRIX_TYPE_2D_NO_ROT,	/**< 2-D scale & translate only */
-   COGL_MATRIX_TYPE_3D		/**< 3-D transformation */
+   COGL_MATRIX_TYPE_3D,		/**< 3-D transformation */
+   COGL_MATRIX_N_TYPES
 } ;
 
 #define DEG2RAD (G_PI/180.0)
@@ -372,8 +374,15 @@ print_matrix_floats (const float m[16])
 void
 _cogl_matrix_print (const CoglMatrix *matrix)
 {
-  g_print ("Matrix type: %s, flags: %x\n",
-           types[matrix->type], (int)matrix->flags);
+  if (!(matrix->flags & MAT_DIRTY_TYPE))
+    {
+      _COGL_RETURN_IF_FAIL (matrix->type < COGL_MATRIX_N_TYPES);
+      g_print ("Matrix type: %s, flags: %x\n",
+               types[matrix->type], (int)matrix->flags);
+    }
+  else
+    g_print ("Matrix type: DIRTY, flags: %x\n", (int)matrix->flags);
+
   print_matrix_floats ((float *)matrix);
   g_print ("Inverse: \n");
   if (!(matrix->flags & MAT_DIRTY_INVERSE))
@@ -1411,31 +1420,31 @@ cogl_matrix_perspective (CoglMatrix *matrix,
  * MAT_FLAG_GENERAL_SCALE and MAT_FLAG_TRANSLATION flags.
  */
 static void
-_cogl_matrix_ortho (CoglMatrix *matrix,
-                    float left,
-                    float right,
-                    float bottom,
-                    float top,
-                    float nearval,
-                    float farval)
+_cogl_matrix_orthographic (CoglMatrix *matrix,
+                           float x_1,
+                           float y_1,
+                           float x_2,
+                           float y_2,
+                           float nearval,
+                           float farval)
 {
   float m[16];
 
-#define M(row,col)  m[col*4+row]
-  M (0,0) = 2.0f / (right-left);
+#define M(row, col)  m[col * 4 + row]
+  M (0,0) = 2.0f / (x_2 - x_1);
   M (0,1) = 0.0f;
   M (0,2) = 0.0f;
-  M (0,3) = -(right+left) / (right-left);
+  M (0,3) = -(x_2 + x_1) / (x_2 - x_1);
 
   M (1,0) = 0.0f;
-  M (1,1) = 2.0f / (top-bottom);
+  M (1,1) = 2.0f / (y_1 - y_2);
   M (1,2) = 0.0f;
-  M (1,3) = -(top+bottom) / (top-bottom);
+  M (1,3) = -(y_1 + y_2) / (y_1 - y_2);
 
   M (2,0) = 0.0f;
   M (2,1) = 0.0f;
-  M (2,2) = -2.0f / (farval-nearval);
-  M (2,3) = -(farval+nearval) / (farval-nearval);
+  M (2,2) = -2.0f / (farval - nearval);
+  M (2,3) = -(farval + nearval) / (farval - nearval);
 
   M (3,0) = 0.0f;
   M (3,1) = 0.0f;
@@ -1454,10 +1463,23 @@ cogl_matrix_ortho (CoglMatrix *matrix,
                    float right,
                    float bottom,
                    float top,
-                   float near_val,
-                   float far_val)
+                   float near,
+                   float far)
 {
-  _cogl_matrix_ortho (matrix, left, right, bottom, top, near_val, far_val);
+  _cogl_matrix_orthographic (matrix, left, top, right, bottom, near, far);
+  _COGL_MATRIX_DEBUG_PRINT (matrix);
+}
+
+void
+cogl_matrix_orthographic (CoglMatrix *matrix,
+                          float x_1,
+                          float y_1,
+                          float x_2,
+                          float y_2,
+                          float near,
+                          float far)
+{
+  _cogl_matrix_orthographic (matrix, x_1, y_1, x_2, y_2, near, far);
   _COGL_MATRIX_DEBUG_PRINT (matrix);
 }
 
@@ -1680,7 +1702,6 @@ cogl_matrix_init_from_quaternion (CoglMatrix *matrix,
   _cogl_matrix_init_from_quaternion (matrix, quaternion);
 }
 
-#if 0
 /*
  * Transpose a float matrix.
  */
@@ -1704,7 +1725,6 @@ _cogl_matrix_util_transposef (float to[16], const float from[16])
   to[14] = from[11];
   to[15] = from[15];
 }
-#endif
 
 void
 cogl_matrix_view_2d_in_frustum (CoglMatrix *matrix,
@@ -1769,8 +1789,8 @@ cogl_matrix_equal (gconstpointer v1, gconstpointer v2)
   const CoglMatrix *a = v1;
   const CoglMatrix *b = v2;
 
-  g_return_val_if_fail (v1 != NULL, FALSE);
-  g_return_val_if_fail (v2 != NULL, FALSE);
+  _COGL_RETURN_VAL_IF_FAIL (v1 != NULL, FALSE);
+  _COGL_RETURN_VAL_IF_FAIL (v2 != NULL, FALSE);
 
   /* We want to avoid having a fuzzy _equal() function (e.g. that uses
    * an arbitrary epsilon value) since this function noteably conforms
@@ -1994,7 +2014,7 @@ cogl_matrix_transform_points (const CoglMatrix *matrix,
                               int n_points)
 {
   /* The results of transforming always have three components... */
-  g_return_if_fail (stride_out >= sizeof (Point3f));
+  _COGL_RETURN_IF_FAIL (stride_out >= sizeof (Point3f));
 
   if (n_components == 2)
     _cogl_matrix_transform_points_f2 (matrix,
@@ -2003,7 +2023,7 @@ cogl_matrix_transform_points (const CoglMatrix *matrix,
                                       n_points);
   else
     {
-      g_return_if_fail (n_components == 3);
+      _COGL_RETURN_IF_FAIL (n_components == 3);
 
       _cogl_matrix_transform_points_f3 (matrix,
                                         stride_in, points_in,
@@ -2033,7 +2053,7 @@ cogl_matrix_project_points (const CoglMatrix *matrix,
                                     n_points);
   else
     {
-      g_return_if_fail (n_components == 4);
+      _COGL_RETURN_IF_FAIL (n_components == 4);
 
       _cogl_matrix_project_points_f4 (matrix,
                                       stride_in, points_in,
@@ -2065,41 +2085,41 @@ cogl_matrix_look_at (CoglMatrix *matrix,
                      float world_up_z)
 {
   CoglMatrix tmp;
-  CoglVector3 forward;
-  CoglVector3 side;
-  CoglVector3 up;
+  float forward[3];
+  float side[3];
+  float up[3];
 
   /* Get a unit viewing direction vector */
-  cogl_vector3_init (&forward,
+  cogl_vector3_init (forward,
                      object_x - eye_position_x,
                      object_y - eye_position_y,
                      object_z - eye_position_z);
-  cogl_vector3_normalize (&forward);
+  cogl_vector3_normalize (forward);
 
-  cogl_vector3_init (&up, world_up_x, world_up_y, world_up_z);
+  cogl_vector3_init (up, world_up_x, world_up_y, world_up_z);
 
   /* Take the sideways direction as being perpendicular to the viewing
    * direction and the word up vector. */
-  cogl_vector3_cross_product (&side, &forward, &up);
-  cogl_vector3_normalize (&side);
+  cogl_vector3_cross_product (side, forward, up);
+  cogl_vector3_normalize (side);
 
   /* Now we have unit sideways and forward-direction vectors calculate
    * a new mutually perpendicular up vector. */
-  cogl_vector3_cross_product (&up, &side, &forward);
+  cogl_vector3_cross_product (up, side, forward);
 
-  tmp.xx = side.x;
-  tmp.yx = side.y;
-  tmp.zx = side.z;
+  tmp.xx = side[0];
+  tmp.yx = side[1];
+  tmp.zx = side[2];
   tmp.wx = 0;
 
-  tmp.xy = up.x;
-  tmp.yy = up.y;
-  tmp.zy = up.z;
+  tmp.xy = up[0];
+  tmp.yy = up[1];
+  tmp.zy = up[2];
   tmp.wy = 0;
 
-  tmp.xz = -forward.x;
-  tmp.yz = -forward.y;
-  tmp.zz = -forward.z;
+  tmp.xz = -forward[0];
+  tmp.yz = -forward[1];
+  tmp.zz = -forward[2];
   tmp.wz = 0;
 
   tmp.xw = 0;
@@ -2107,9 +2127,24 @@ cogl_matrix_look_at (CoglMatrix *matrix,
   tmp.zw = 0;
   tmp.ww = 1;
 
-  cogl_matrix_translate (&tmp, -eye_position_x, -eye_position_y, -eye_position_z);
-
   tmp.flags = (MAT_FLAG_GENERAL_3D | MAT_DIRTY_TYPE | MAT_DIRTY_INVERSE);
 
+  cogl_matrix_translate (&tmp, -eye_position_x, -eye_position_y, -eye_position_z);
+
   cogl_matrix_multiply (matrix, matrix, &tmp);
+}
+
+void
+cogl_matrix_transpose (CoglMatrix *matrix)
+{
+  float new_values[16];
+
+  /* We don't need to do anything if the matrix is the identity matrix */
+  if (!(matrix->flags & MAT_DIRTY_TYPE) &&
+      matrix->type == COGL_MATRIX_TYPE_IDENTITY)
+    return;
+
+  _cogl_matrix_util_transposef (new_values, cogl_matrix_get_array (matrix));
+
+  cogl_matrix_init_from_array (matrix, new_values);
 }
